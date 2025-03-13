@@ -1,3 +1,12 @@
+#[cfg(feature = "debug")]
+use prettytable::{Table, Row, Cell, format};
+#[cfg(feature = "debug")]
+use std::fmt::Write as _;
+#[cfg(feature = "debug")]
+use std::io::Write;
+#[cfg(feature = "debug")]
+use std::process::{Command, Stdio};
+
 use std::fs;
 use std::error::Error;
 
@@ -52,10 +61,44 @@ impl Memory {
         self.rom_size = file.len();
         Ok(())
     }
+
+    #[cfg(feature = "debug")]
     pub fn display_rom(&self) {
-        self.memory
-            .iter()
-            .take(self.rom_size)
-            .for_each(|byte| print!("0x{:02X?}", byte));
+        let mut table = Table::new();
+        table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
+        let cols_per_row = 16;
+
+        let mut headers = vec![Cell::new("Addr (0x)")];
+        headers.extend((0..cols_per_row).map(|i| Cell::new(&format!("{:X}", i))));
+        table.set_titles(Row::new(headers));
+
+        for (i, chunk) in self.memory[..self.rom_size].chunks(cols_per_row).enumerate() {
+            let mut row = vec![Cell::new(&format!("{:04X}", i * cols_per_row))];
+
+            for &byte in chunk {
+                row.push(Cell::new(&format!("{:02X}", byte)));
+            }
+
+            while row.len() < cols_per_row + 1 {
+                row.push(Cell::new("  "));
+            }
+
+            table.add_row(Row::new(row));
+        }
+
+        // Capture output as a string
+        let mut output = Vec::new();
+        table.print(&mut output).unwrap(); // `print` works with a writer like Vec<u8>
+
+        // Pipe output to `less`
+        let mut pager = Command::new("less")
+            .arg("-RS") // Preserve formatting & allow horizontal scrolling
+            .stdin(Stdio::piped())
+            .spawn()
+            .expect("Failed to launch less");
+
+        if let Some(ref mut stdin) = pager.stdin {
+            stdin.write_all(&output).unwrap();
+        }
     }
 }
