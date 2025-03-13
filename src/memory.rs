@@ -44,4 +44,18 @@ impl Memory {
             rom_size: 0
         }
     }
+    pub fn load_rom(&mut self, path: &str) -> Result<(), Box<dyn Error>>{
+        let file = fs::read(path)?;
+        file.iter()
+            .enumerate()
+            .for_each(|(i, byte)| self.memory[i] = *byte);
+        self.rom_size = file.len();
+        Ok(())
+    }
+    pub fn display_rom(&self) {
+        self.memory
+            .iter()
+            .take(self.rom_size)
+            .for_each(|byte| print!("0x{:02X?}", byte));
+    }
 }
