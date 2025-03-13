@@ -1,28 +1,28 @@
-enum Register {
-    AF(u16),
-    BC(u16),
-    DE(u16),
-    HL(u16),
-    SP(u16),
-    PC(u16),
-    FLAGS(u8)
+struct Registers {
+    af: u16,
+    bc: u16,
+    de: u16,
+    hl: u16,
+    sp: u16,
+    pc: u16,
+    flags: u8
 }
 pub struct CPU {
-    registers: [Register; 7]
+    registers: Registers
 }
 
 impl CPU {
     pub fn new() -> Self {
         Self {
-             registers: [
-                Register::AF(0),
-                Register::BC(0),
-                Register::DE(0),
-                Register::HL(0),
-                Register::SP(0),
-                Register::PC(0),
-                Register::FLAGS(0)
-            ]
+            registers: Registers {
+                af: 0,
+                bc: 0,
+                de: 0,
+                hl: 0,
+                sp: 0,
+                pc: 0,
+                flags: 0
+            }
         }
     }
 }
