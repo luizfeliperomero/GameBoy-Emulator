@@ -54,7 +54,39 @@ impl<T: Drawable> CPU<T> {
         }
     }
     fn decode(&mut self) {
-        let instruction_byte = self.memory.memory[self.registers.pc as usize];
-        println!("{:02X?}", instruction_byte);
+        let opcode: u8 = self.memory.memory[self.registers.pc as usize];
+        match opcode {
+            _ => todo!("{}", format!("Unimplemented opcode: {:02X?}", opcode).as_str())
+        }
     }
+    fn get_leftmost_byte(&self, bytes: u16) -> u8 {
+        ((bytes & 0xFF00) >> 8) as u8
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gpu::GPU;
+
+    struct FakeGPU{}
+    impl Drawable for FakeGPU {
+        fn draw(&mut self){}
+    }
+
+    fn cpu() -> CPU<FakeGPU> {
+        let mem = Memory::new();
+        let gpu = FakeGPU{};
+        CPU::new(mem, gpu)
+    }
+
+    #[test]
+    fn should_return_leftmost_byte() {
+        let cpu = cpu();
+        assert_eq!(cpu.get_leftmost_byte(0xFF00), 0xFF);
+        assert_eq!(cpu.get_leftmost_byte(0x00FF), 0x00);
+        assert_eq!(cpu.get_leftmost_byte(0xCE03), 0xCE);
+        assert_eq!(cpu.get_leftmost_byte(0xAF30), 0xAF);
+    }
+
 }
