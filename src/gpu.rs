@@ -1,7 +1,7 @@
-use sdl2::pixels::{PixelFormatEnum, Color};
+use sdl2::pixels::{Color, PixelFormatEnum};
 use sdl2::render::Canvas;
-use sdl2::video::{Window, WindowContext};
 use sdl2::render::{Texture, TextureCreator};
+use sdl2::video::{Window, WindowContext};
 
 const TILE_MAP_SIZE: u16 = 1024;
 const ORIGINAL_GB_DISPLAY_WIDTH: u32 = 160;
@@ -23,7 +23,11 @@ impl SdlUtils {
         let title = "GameBoy Emulator".to_string();
         let video_subsystem = sdl_context.video().unwrap();
         let window = video_subsystem
-            .window(title.as_str(), ORIGINAL_GB_DISPLAY_WIDTH * SCALING_FACTOR, ORIGINAL_GB_DISPLAY_HEIGHT * SCALING_FACTOR)
+            .window(
+                title.as_str(),
+                ORIGINAL_GB_DISPLAY_WIDTH * SCALING_FACTOR,
+                ORIGINAL_GB_DISPLAY_HEIGHT * SCALING_FACTOR,
+            )
             .position_centered()
             .build()
             .unwrap();
@@ -53,7 +57,7 @@ impl GPU {
         Self {
             sdl_utils: SdlUtils::new(),
             tile_map: [0; TILE_MAP_SIZE as usize],
-            display: [0xFF; DISPLAY_SIZE as usize]
+            display: [0xFF; DISPLAY_SIZE as usize],
         }
     }
 }
@@ -61,11 +65,13 @@ impl GPU {
 impl Drawable for GPU {
     // TODO (luizf): Don't create texture in every call to this function
     fn draw(&mut self) {
-        let mut texture = self.sdl_utils.texture_creator
-                .create_texture_streaming(PixelFormatEnum::RGB888, 256, 256)
-                .expect("Couldn't create texture");
+        let mut texture = self
+            .sdl_utils
+            .texture_creator
+            .create_texture_streaming(PixelFormatEnum::RGB888, 256, 256)
+            .expect("Couldn't create texture");
         let _ = texture.update(None, &self.display, ORIGINAL_GB_DISPLAY_WIDTH as usize);
         let _ = self.sdl_utils.canvas.copy(&texture, None, None);
-        self.sdl_utils.canvas.present(); 
+        self.sdl_utils.canvas.present();
     }
 }

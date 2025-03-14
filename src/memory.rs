@@ -1,5 +1,5 @@
 #[cfg(feature = "debug")]
-use prettytable::{Table, Row, Cell, format};
+use prettytable::{Cell, Row, Table, format};
 #[cfg(feature = "debug")]
 use std::fmt::Write as _;
 #[cfg(feature = "debug")]
@@ -7,8 +7,8 @@ use std::io::Write;
 #[cfg(feature = "debug")]
 use std::process::{Command, Stdio};
 
-use std::fs;
 use std::error::Error;
+use std::fs;
 
 const MEMORY_SIZE: usize = 2_usize.pow(16);
 struct Range {
@@ -17,10 +17,7 @@ struct Range {
 }
 impl Range {
     fn new(start: u16, end: u16) -> Self {
-        Self {
-            start,
-            end
-        }
+        Self { start, end }
     }
 }
 struct MemoryMap {
@@ -53,7 +50,7 @@ impl Memory {
             rom_size: 0,
         }
     }
-    pub fn load_rom(&mut self, path: &str) -> Result<(), Box<dyn Error>>{
+    pub fn load_rom(&mut self, path: &str) -> Result<(), Box<dyn Error>> {
         let file = fs::read(path)?;
         file.iter()
             .enumerate()
@@ -72,7 +69,10 @@ impl Memory {
         headers.extend((0..cols_per_row).map(|i| Cell::new(&format!("{:X}", i))));
         table.set_titles(Row::new(headers));
 
-        for (i, chunk) in self.memory[..self.rom_size].chunks(cols_per_row).enumerate() {
+        for (i, chunk) in self.memory[..self.rom_size]
+            .chunks(cols_per_row)
+            .enumerate()
+        {
             let mut row = vec![Cell::new(&format!("{:04X}", i * cols_per_row))];
 
             for &byte in chunk {

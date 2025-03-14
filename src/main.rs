@@ -1,13 +1,14 @@
 #[cfg(feature = "debug")]
-#[macro_use] extern crate prettytable;
+#[macro_use]
+extern crate prettytable;
 extern crate sdl2;
 
 use crate::cpu::CPU;
-use crate::memory::Memory;
 use crate::gpu::GPU;
+use crate::memory::Memory;
 pub mod cpu;
-pub mod memory;
 pub mod gpu;
+pub mod memory;
 
 fn main() {
     let mut mem = Memory::new();
@@ -16,7 +17,7 @@ fn main() {
             let mut gpu = GPU::new();
             let mut cpu = CPU::new(mem, gpu);
             cpu.run();
-        },
+        }
         Err(error) => panic!("Problem reading file: {error:?}"),
     };
 }

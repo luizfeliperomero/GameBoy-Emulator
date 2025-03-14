@@ -1,7 +1,7 @@
-use std::time::{Instant, Duration};
-use std::thread;
-use crate::memory::Memory;
 use crate::gpu::Drawable;
+use crate::memory::Memory;
+use std::thread;
+use std::time::{Duration, Instant};
 
 const FREQUENCY: u32 = 4_194_304;
 
@@ -46,8 +46,8 @@ impl<T: Drawable> CPU<T> {
             }
             let elapsed = timer.elapsed();
             if elapsed < one_sec {
-               thread::sleep(one_sec - elapsed);
-            } 
+                thread::sleep(one_sec - elapsed);
+            }
             cycles = 0;
         }
     }
@@ -55,9 +55,13 @@ impl<T: Drawable> CPU<T> {
         let opcode: u8 = self.memory.memory[self.registers.pc as usize];
         match opcode {
             0xCE => {
-                let a = self.get_leftmost_byte(self.registers.af) + self.memory.memory[(self.registers.pc + 1) as usize];
+                let a = self.get_leftmost_byte(self.registers.af)
+                    + self.memory.memory[(self.registers.pc + 1) as usize];
             }
-            _ => todo!("{}", format!("Unimplemented opcode: {:02X?}", opcode).as_str())
+            _ => todo!(
+                "{}",
+                format!("Unimplemented opcode: {:02X?}", opcode).as_str()
+            ),
         }
     }
     fn get_leftmost_byte(&self, bytes: u16) -> u8 {
@@ -76,14 +80,14 @@ mod tests {
     use super::*;
     use crate::gpu::GPU;
 
-    struct FakeGPU{}
+    struct FakeGPU {}
     impl Drawable for FakeGPU {
-        fn draw(&mut self){}
+        fn draw(&mut self) {}
     }
 
     fn cpu() -> CPU<FakeGPU> {
         let mem = Memory::new();
-        let gpu = FakeGPU{};
+        let gpu = FakeGPU {};
         CPU::new(mem, gpu)
     }
 
@@ -112,5 +116,4 @@ mod tests {
         assert_eq!(cpu.replace_leftmost_byte(0x0000, 0xFF), 0xFF00);
         assert_eq!(cpu.replace_leftmost_byte(0xAB34, 0xDA), 0xDA34);
     }
-
 }
