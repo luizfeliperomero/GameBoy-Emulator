@@ -55,8 +55,11 @@ impl<T: Drawable> CPU<T> {
         let opcode: u8 = self.memory.memory[self.registers.pc as usize];
         match opcode {
             0xCE => {
-                let a = self.get_leftmost_byte(self.registers.af)
-                    + self.memory.memory[(self.registers.pc + 1) as usize];
+                let af = self.registers.af;
+                let a = self.get_leftmost_byte(af);
+                let n8 = self.memory.memory[(self.registers.pc + 1) as usize];
+                let ac = a + n8 + self.get_carry_flag();
+                self.registers.pc += 2;
             }
             _ => todo!(
                 "{}",
@@ -72,6 +75,10 @@ impl<T: Drawable> CPU<T> {
     }
     fn replace_leftmost_byte(&self, bytes: u16, new_byte: u8) -> u16 {
         (bytes & 0x00FF) | ((new_byte as u16) << 8)
+    }
+    fn get_carry_flag(&self) -> u8 {
+        let flags = (self.registers.af & 0x00FF) as u8;
+        (flags & (1 << 4)) >> 4
     }
 }
 
@@ -115,5 +122,14 @@ mod tests {
         assert_eq!(cpu.replace_leftmost_byte(0xFF00, 0xAC), 0xAC00);
         assert_eq!(cpu.replace_leftmost_byte(0x0000, 0xFF), 0xFF00);
         assert_eq!(cpu.replace_leftmost_byte(0xAB34, 0xDA), 0xDA34);
+    }
+
+    #[test]
+    fn should_return_carry_flag() {
+        let mut cpu = cpu();
+        cpu.registers.af = 0b0001_0000;
+        assert_eq!(cpu.get_carry_flag(), 1);
+        cpu.registers.af = 0b0000_0000;
+        assert_eq!(cpu.get_carry_flag(), 0);
     }
 }
