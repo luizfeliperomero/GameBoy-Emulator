@@ -1,6 +1,7 @@
 use std::time::{Instant, Duration};
 use std::thread;
 use crate::memory::Memory;
+use crate::gpu::Drawable;
 
 const FREQUENCY: u32 = 4_194_304;
 
@@ -13,13 +14,14 @@ struct Registers {
     pc: u16,
     flags: u8
 }
-pub struct CPU {
+pub struct CPU<T: Drawable> {
     registers: Registers,
-    memory: Memory
+    memory: Memory,
+    gpu: T,
 }
 
-impl CPU {
-    pub fn new(memory: Memory) -> Self {
+impl<T: Drawable> CPU<T> {
+    pub fn new(memory: Memory, gpu: T) -> Self {
         Self {
             registers: Registers {
                 af: 0,
@@ -31,6 +33,7 @@ impl CPU {
                 flags: 0
             },
             memory,
+            gpu,
         }
     }
     pub fn run(&mut self) {
@@ -40,6 +43,7 @@ impl CPU {
             let timer = Instant::now();
             while cycles < FREQUENCY {
                 self.decode();
+                self.gpu.draw();
                 cycles += 1;
             }
             let elapsed = timer.elapsed();
