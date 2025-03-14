@@ -33,9 +33,9 @@ struct MemoryMap {
     h_ram: Range,
 }
 pub struct Memory {
-    memory: [u8; MEMORY_SIZE],
+    pub memory: [u8; MEMORY_SIZE],
     map: MemoryMap,
-    rom_size: usize
+    rom_size: usize,
 }
 impl Memory {
     pub fn new() -> Self {
@@ -50,7 +50,7 @@ impl Memory {
                 io: Range::new(0xFF00, 0xFF7F),
                 h_ram: Range::new(0xFF80, 0xFFFE),
             },
-            rom_size: 0
+            rom_size: 0,
         }
     }
     pub fn load_rom(&mut self, path: &str) -> Result<(), Box<dyn Error>>{

@@ -14,11 +14,12 @@ struct Registers {
     flags: u8
 }
 pub struct CPU {
-    registers: Registers
+    registers: Registers,
+    memory: Memory
 }
 
 impl CPU {
-    pub fn new() -> Self {
+    pub fn new(memory: Memory) -> Self {
         Self {
             registers: Registers {
                 af: 0,
@@ -47,5 +48,9 @@ impl CPU {
             } 
             cycles = 0;
         }
+    }
+    fn decode(&mut self) {
+        let instruction_byte = self.memory.memory[self.registers.pc as usize];
+        println!("{:02X?}", instruction_byte);
     }
 }
