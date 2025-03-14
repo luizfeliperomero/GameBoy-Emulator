@@ -12,7 +12,6 @@ struct Registers {
     hl: u16,
     sp: u16,
     pc: u16,
-    flags: u8
 }
 pub struct CPU<T: Drawable> {
     registers: Registers,
@@ -30,7 +29,6 @@ impl<T: Drawable> CPU<T> {
                 hl: 0,
                 sp: 0,
                 pc: 0x0104,
-                flags: 0
             },
             memory,
             gpu,
@@ -56,11 +54,20 @@ impl<T: Drawable> CPU<T> {
     fn decode(&mut self) {
         let opcode: u8 = self.memory.memory[self.registers.pc as usize];
         match opcode {
+            0xCE => {
+                let a = self.get_leftmost_byte(self.registers.af) + self.memory.memory[(self.registers.pc + 1) as usize];
+            }
             _ => todo!("{}", format!("Unimplemented opcode: {:02X?}", opcode).as_str())
         }
     }
     fn get_leftmost_byte(&self, bytes: u16) -> u8 {
         ((bytes & 0xFF00) >> 8) as u8
+    }
+    fn get_rightmost_byte(&self, bytes: u16) -> u8 {
+        (bytes & 0x00FF) as u8
+    }
+    fn replace_leftmost_byte(&self, bytes: u16, new_byte: u8) -> u16 {
+        (bytes & 0x00FF) | ((new_byte as u16) << 8)
     }
 }
 
@@ -87,6 +94,23 @@ mod tests {
         assert_eq!(cpu.get_leftmost_byte(0x00FF), 0x00);
         assert_eq!(cpu.get_leftmost_byte(0xCE03), 0xCE);
         assert_eq!(cpu.get_leftmost_byte(0xAF30), 0xAF);
+    }
+
+    #[test]
+    fn should_return_rightmost_byte() {
+        let cpu = cpu();
+        assert_eq!(cpu.get_rightmost_byte(0xFF00), 0x00);
+        assert_eq!(cpu.get_rightmost_byte(0x00FF), 0xFF);
+        assert_eq!(cpu.get_rightmost_byte(0x1ABC), 0xBC);
+        assert_eq!(cpu.get_rightmost_byte(0xCA12), 0x12);
+    }
+
+    #[test]
+    fn should_replace_leftmost_byte() {
+        let cpu = cpu();
+        assert_eq!(cpu.replace_leftmost_byte(0xFF00, 0xAC), 0xAC00);
+        assert_eq!(cpu.replace_leftmost_byte(0x0000, 0xFF), 0xFF00);
+        assert_eq!(cpu.replace_leftmost_byte(0xAB34, 0xDA), 0xDA34);
     }
 
 }
