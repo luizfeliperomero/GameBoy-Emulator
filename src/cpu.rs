@@ -5,6 +5,12 @@ use std::time::{Duration, Instant};
 
 const FREQUENCY: u32 = 4_194_304;
 
+#[derive(Debug, PartialEq)]
+enum Instruction {
+    ADC_A_n8,
+    LD_H_HL,
+}
+
 struct Registers {
     af: u16,
     bc: u16,
@@ -40,7 +46,8 @@ impl<T: Drawable> CPU<T> {
         loop {
             let timer = Instant::now();
             while cycles < FREQUENCY {
-                self.decode();
+                let opcode: u8 = self.memory.memory[self.registers.pc as usize];
+                self.decode(opcode);
                 self.gpu.draw();
                 cycles += 1;
             }
@@ -51,15 +58,24 @@ impl<T: Drawable> CPU<T> {
             cycles = 0;
         }
     }
-    fn decode(&mut self) {
-        let opcode: u8 = self.memory.memory[self.registers.pc as usize];
+    fn decode(&mut self, opcode: u8) -> Instruction {
         match opcode {
             0xCE => {
                 let af = self.registers.af;
                 let a = self.get_leftmost_byte(af);
                 let n8 = self.memory.memory[(self.registers.pc + 1) as usize];
-                let ac = a + n8 + self.get_carry_flag();
+                let result = a + n8 + self.get_carry_flag();
+                self.registers.af = self.replace_leftmost_byte(af, result);
                 self.registers.pc += 2;
+                Instruction::ADC_A_n8
+            }
+            0x66 => {
+                let hl = self.registers.hl;
+                let h = self.get_leftmost_byte(hl);
+                self.registers.hl =
+                    self.replace_leftmost_byte(hl, self.memory.memory[hl as usize] as u8);
+                self.registers.pc += 1;
+                Instruction::LD_H_HL
             }
             _ => todo!(
                 "{}",
@@ -131,5 +147,29 @@ mod tests {
         assert_eq!(cpu.get_carry_flag(), 1);
         cpu.registers.af = 0b0000_0000;
         assert_eq!(cpu.get_carry_flag(), 0);
+    }
+
+    #[test]
+    fn adc_a_n8() {
+        let mut cpu = cpu();
+        cpu.registers.pc = 0;
+        cpu.memory.memory[1] = 5;
+        cpu.registers.af = 0x0100;
+        let instruction = cpu.decode(0xCE);
+        assert_eq!(instruction, Instruction::ADC_A_n8);
+        assert_eq!(cpu.registers.pc, 2);
+        assert_eq!(cpu.registers.af, 0x0600);
+    }
+
+    #[test]
+    fn ld_h_hl() {
+        let mut cpu = cpu();
+        cpu.registers.pc = 0;
+        cpu.registers.hl = 0xFF02;
+        cpu.memory.memory[0xFF02] = 0xA;
+        let instruction = cpu.decode(0x66);
+        assert_eq!(instruction, Instruction::LD_H_HL);
+        assert_eq!(cpu.registers.pc, 1);
+        assert_eq!(cpu.registers.hl, 0x0A02);
     }
 }
