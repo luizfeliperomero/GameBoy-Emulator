@@ -209,7 +209,10 @@ impl<T: Drawable> CPU<T> {
                 let af = self.registers.af;
                 let a = self.get_leftmost_byte(af);
                 let n8 = self.memory.memory[(self.registers.pc + 1) as usize];
-                let result = a + n8 + self.get_carry_flag();
+                let result = a.wrapping_add(n8).wrapping_add(self.get_carry_flag());
+                if result == 0 {
+                    self.set_zero_flag();
+                }
                 self.registers.af = self.replace_leftmost_byte(af, result);
                 self.registers.pc += 2;
                 Instruction::ADC_A_n8
@@ -240,6 +243,11 @@ impl<T: Drawable> CPU<T> {
     fn get_carry_flag(&self) -> u8 {
         let flags = (self.registers.af & 0x00FF) as u8;
         (flags & (1 << 4)) >> 4
+    }
+    fn set_zero_flag(&mut self) {
+        let mut flags = (self.registers.af & 0x00FF) as u8;
+        flags = flags | (1 << 7);
+        self.registers.af |= flags as u16;
     }
 }
 
@@ -292,6 +300,17 @@ mod tests {
         assert_eq!(cpu.get_carry_flag(), 1);
         cpu.registers.af = 0b0000_0000;
         assert_eq!(cpu.get_carry_flag(), 0);
+    }
+
+    #[test]
+    fn should_set_zero_flag() {
+        let mut cpu = cpu();
+        cpu.registers.af = 0b11111111_00000000;
+        cpu.set_zero_flag();
+        assert_eq!(cpu.registers.af, 0b11111111_10000000);
+        cpu.registers.af = 0b01010010_10101010;
+        cpu.set_zero_flag();
+        assert_eq!(cpu.registers.af, 0b01010010_10101010);
     }
 
     #[test]
