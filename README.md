@@ -4,6 +4,7 @@ It is possible to run the emulator in two modes: **default** and **debug**.
 Both modes runs the emulator with the pre-allocated ROM (currently _Super Mario Land_)
 ### Default
 In this mode, the emulator runs normally without additional debugging information.
+To run the emulator in default mode, use the following command:
  ```sh
 cargo run
 ```
