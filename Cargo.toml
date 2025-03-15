@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+colored = "3.0.0"
 prettytable-rs = { version = "0.10.0", optional = true }
 sdl2 = { version = "0.37.0" }
 

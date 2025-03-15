@@ -60,7 +60,7 @@ impl Memory {
     }
 
     #[cfg(feature = "debug")]
-    pub fn display_rom(&self) {
+    pub fn display_rom(&self) -> Result<(), std::io::Error> {
         let mut table = Table::new();
         table.set_format(*format::consts::FORMAT_NO_LINESEP_WITH_TITLE);
         let cols_per_row = 16;
@@ -97,8 +97,7 @@ impl Memory {
             .spawn()
             .expect("Failed to launch less");
 
-        if let Some(ref mut stdin) = pager.stdin {
-            stdin.write_all(&output).unwrap();
-        }
+        pager.stdin.unwrap().write_all(&output)?;
+        Ok(())
     }
 }
