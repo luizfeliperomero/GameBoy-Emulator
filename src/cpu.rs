@@ -1,7 +1,13 @@
 use crate::gpu::Drawable;
 use crate::memory::Memory;
+use colored::Colorize;
+use std::fmt;
+use std::io::{self, Write};
 use std::thread;
 use std::time::{Duration, Instant};
+
+#[cfg(feature = "debug")]
+use prettytable::{Cell, Row, Table, format};
 
 const FREQUENCY: u32 = 4_194_304;
 
@@ -9,6 +15,24 @@ const FREQUENCY: u32 = 4_194_304;
 enum Instruction {
     ADC_A_n8,
     LD_H_HL,
+}
+
+impl fmt::Display for Instruction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let output = match self {
+            Instruction::ADC_A_n8 => {
+                let mnemonic = "ADC A, n8".bright_cyan();
+                let opcode = "0xCE";
+                format!("{mnemonic} ({opcode})")
+            }
+            Instruction::LD_H_HL => {
+                let mnemonic = "LD H, [HL]".bright_cyan();
+                let opcode = "0x66";
+                format!("{mnemonic} ({opcode})")
+            }
+        };
+        write!(f, "{}", output)
+    }
 }
 
 struct Registers {
@@ -40,15 +64,15 @@ impl<T: Drawable> CPU<T> {
             gpu,
         }
     }
+
+    #[cfg(not(feature = "debug"))]
     pub fn run(&mut self) {
         let mut cycles = 0;
         let one_sec = Duration::from_secs(1);
         loop {
             let timer = Instant::now();
             while cycles < FREQUENCY {
-                let opcode: u8 = self.memory.memory[self.registers.pc as usize];
-                self.decode(opcode);
-                self.gpu.draw();
+                self.cycle();
                 cycles += 1;
             }
             let elapsed = timer.elapsed();
@@ -56,6 +80,127 @@ impl<T: Drawable> CPU<T> {
                 thread::sleep(one_sec - elapsed);
             }
             cycles = 0;
+        }
+    }
+
+    fn cycle(&mut self) -> Instruction {
+        let opcode: u8 = self.memory.memory[self.registers.pc as usize];
+        let instruction = self.decode(opcode);
+        self.gpu.draw();
+        instruction
+    }
+
+    #[cfg(feature = "debug")]
+    pub fn run(&mut self) {
+        let debug_mode_msg = "Running in Debug Mode".bright_yellow();
+        let help = "help".bold();
+        let guide_msg = format!("Type {help} to see the list of commands!");
+        println!("");
+        println!(" {debug_mode_msg}");
+        println!(" {guide_msg}");
+        println!("");
+        let mut action = String::new();
+        loop {
+            let debugger_prefix = "(gb-debugger) ".bright_green();
+            println!("");
+            print!("{debugger_prefix}");
+            io::stdout().flush().expect("Failed to flush stdout");
+            action.clear();
+            io::stdin()
+                .read_line(&mut action)
+                .expect("Failed to read line");
+            println!("");
+            match action.trim() {
+                "help" => {
+                    let mut table = Table::new();
+                    table.add_row(row!["Command", "Description"]);
+                    table.add_row(row!["run", "Start the emulator and run the loaded ROM."]);
+                    table.add_row(row!["quit, q", "Exit the debugger"]);
+                    table.add_row(row!["step", "Execute one cycle of the emulator."]);
+                    table.add_row(row!["display rom", "Display the current ROM contents."]);
+                    table.add_row(row!["show register <REG>", "Show the value of a specific register\n(e.g., af, bc, de, hl, sp, pc or all)."]);
+                    table.add_row(row![
+                        "show memory <ADDR>",
+                        "Display memory content at a given address."
+                    ]);
+                    table.printstd();
+                }
+                "run" => {
+                    let mut cycles = 0;
+                    let one_sec = Duration::from_secs(1);
+                    loop {
+                        let timer = Instant::now();
+                        while cycles < FREQUENCY {
+                            println!("{}", self.cycle());
+                            cycles += 1;
+                        }
+                        let elapsed = timer.elapsed();
+                        if elapsed < one_sec {
+                            thread::sleep(one_sec - elapsed);
+                        }
+                        cycles = 0;
+                    }
+                }
+                "quit" | "q" => {
+                    break;
+                }
+                "step" => {
+                    println!("{}", self.cycle());
+                }
+                "display rom" => match self.memory.display_rom() {
+                    Ok(_) => {}
+                    Err(_) => continue,
+                },
+                cmd if cmd.starts_with("show register ") => {
+                    match cmd.trim_start_matches("show register ") {
+                        "af" => println!("0x{:02X?}", self.registers.af),
+                        "bc" => println!("0x{:02X?}", self.registers.bc),
+                        "de" => println!("0x{:02X?}", self.registers.de),
+                        "hl" => println!("0x{:02X?}", self.registers.hl),
+                        "sp" => println!("0x{:02X?}", self.registers.sp),
+                        "pc" => println!("0x{:02X?}", self.registers.pc),
+                        "all" => {
+                            let mut table = Table::new();
+                            table.add_row(row!["AF", format!("0x{:02X?}", self.registers.af)]);
+                            table.add_row(row!["BC", format!("0x{:02X?}", self.registers.bc)]);
+                            table.add_row(row!["DE", format!("0x{:02X?}", self.registers.de)]);
+                            table.add_row(row!["HL", format!("0x{:02X?}", self.registers.hl)]);
+                            table.add_row(row!["SP", format!("0x{:02X?}", self.registers.sp)]);
+                            table.add_row(row!["PC", format!("0x{:02X?}", self.registers.pc)]);
+                            table.printstd();
+                        }
+                        _ => println!("Unknown register."),
+                    }
+                }
+                cmd if cmd.starts_with("show memory ") => {
+                    let parts: Vec<&str> = cmd.split_whitespace().collect();
+                    if let Some(addr_str) = parts.get(2) {
+                        let address = if addr_str.starts_with("0x") {
+                            u16::from_str_radix(&addr_str[2..], 16)
+                        } else {
+                            addr_str.parse::<u16>()
+                        };
+
+                        match address {
+                            Ok(address) => {
+                                println!(
+                                    "Memory at address {}: {}",
+                                    addr_str, self.memory.memory[address as usize]
+                                );
+                            }
+                            Err(_) => {
+                                println!("Invalid memory address format: {}", addr_str);
+                            }
+                        }
+                    } else {
+                        println!("Missing memory address");
+                    }
+                }
+
+                _ => {
+                    println!("{}", action.as_str());
+                }
+            }
         }
     }
     fn decode(&mut self, opcode: u8) -> Instruction {
