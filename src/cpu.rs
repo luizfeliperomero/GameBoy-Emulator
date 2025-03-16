@@ -210,10 +210,19 @@ impl<T: Drawable> CPU<T> {
                 let a = self.get_leftmost_byte(af);
                 let n8 = self.memory.memory[(self.registers.pc + 1) as usize];
                 let result = a.wrapping_add(n8).wrapping_add(self.get_carry_flag());
+                self.registers.af = self.replace_leftmost_byte(af, result);
                 if result == 0 {
                     self.set_zero_flag();
                 }
-                self.registers.af = self.replace_leftmost_byte(af, result);
+                self.clear_n_flag();
+                let half_carry = (a & 0xF) + (n8 & 0xF) + self.get_carry_flag() > 0x0F;
+                if half_carry {
+                    self.set_h_flag();
+                }
+                let result_u16: u16 = (a + n8 + self.get_carry_flag()) as u16;
+                if result_u16 > 0xFF {
+                    self.set_carry_flag();
+                }
                 self.registers.pc += 2;
                 Instruction::ADC_A_n8
             }
@@ -247,6 +256,22 @@ impl<T: Drawable> CPU<T> {
     fn set_zero_flag(&mut self) {
         let mut flags = (self.registers.af & 0x00FF) as u8;
         flags = flags | (1 << 7);
+        self.registers.af |= flags as u16;
+    }
+    fn clear_n_flag(&mut self) {
+        let mut flags = (self.registers.af & 0x00FF) as u8;
+        let mask = 1 << 6;
+        let a = (self.get_leftmost_byte(self.registers.af) as u16) << 8;
+        self.registers.af = a | ((flags | mask) ^ mask) as u16;
+    }
+    fn set_h_flag(&mut self) {
+        let mut flags = (self.registers.af & 0x00FF) as u8;
+        flags = flags | (1 << 5);
+        self.registers.af |= flags as u16;
+    }
+    fn set_carry_flag(&mut self) {
+        let mut flags = (self.registers.af & 0x00FF) as u8;
+        flags = flags | (1 << 4);
         self.registers.af |= flags as u16;
     }
 }
@@ -311,6 +336,39 @@ mod tests {
         cpu.registers.af = 0b01010010_10101010;
         cpu.set_zero_flag();
         assert_eq!(cpu.registers.af, 0b01010010_10101010);
+    }
+
+    #[test]
+    fn should_clear_n_flag() {
+        let mut cpu = cpu();
+        cpu.registers.af = 0b11111111_11111111;
+        cpu.clear_n_flag();
+        assert_eq!(cpu.registers.af, 0b11111111_10111111);
+        cpu.registers.af = 0b11111111_10111111;
+        cpu.clear_n_flag();
+        assert_eq!(cpu.registers.af, 0b11111111_10111111);
+    }
+
+    #[test]
+    fn should_set_h_flag() {
+        let mut cpu = cpu();
+        cpu.registers.af = 0b11111111_11011111;
+        cpu.set_h_flag();
+        assert_eq!(cpu.registers.af, 0b11111111_11111111);
+        cpu.registers.af = 0b11111111_11111111;
+        cpu.set_h_flag();
+        assert_eq!(cpu.registers.af, 0b11111111_11111111);
+    }
+
+    #[test]
+    fn should_set_carry_flag() {
+        let mut cpu = cpu();
+        cpu.registers.af = 0b00000000_00000000;
+        cpu.set_carry_flag();
+        assert_eq!(cpu.registers.af, 0b00000000_00010000);
+        cpu.registers.af = 0b00000000_00010000;
+        cpu.set_carry_flag();
+        assert_eq!(cpu.registers.af, 0b00000000_00010000);
     }
 
     #[test]
