@@ -1,4 +1,4 @@
-# GameBoy Emulator
+# Game Boy Emulator
 ## Usage
 It is possible to run the emulator in two modes: **default** and **debug**.
 Both modes runs the emulator with the pre-allocated ROM (currently _Super Mario Land_)
