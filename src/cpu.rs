@@ -35,6 +35,15 @@ impl fmt::Display for Instruction {
     }
 }
 
+#[repr(u8)]
+#[derive(Clone)]
+enum Flag {
+    Z = 7,
+    N = 6,
+    H = 5,
+    C = 4,
+}
+
 struct Registers {
     af: u16,
     bc: u16,
@@ -209,19 +218,23 @@ impl<T: Drawable> CPU<T> {
                 let af = self.registers.af;
                 let a = self.get_leftmost_byte(af);
                 let n8 = self.memory.memory[(self.registers.pc + 1) as usize];
-                let result = a.wrapping_add(n8).wrapping_add(self.get_carry_flag());
+                let result = a.wrapping_add(n8).wrapping_add(self.get_flag(Flag::C));
                 self.registers.af = self.replace_leftmost_byte(af, result);
+
                 if result == 0 {
-                    self.set_zero_flag();
+                    self.set_flag(Flag::Z);
                 }
-                self.clear_n_flag();
-                let half_carry = (a & 0xF) + (n8 & 0xF) + self.get_carry_flag() > 0x0F;
+                self.clear_flag(Flag::N);
+                let half_carry = (a & 0xF) + (n8 & 0xF) + self.get_flag(Flag::C) > 0x0F;
                 if half_carry {
-                    self.set_h_flag();
+                    self.set_flag(Flag::H);
                 }
-                let result_u16: u16 = (a + n8 + self.get_carry_flag()) as u16;
-                if result_u16 > 0xFF {
-                    self.set_carry_flag();
+
+                let a: u16 = a as u16;
+                let n8: u16 = a as u16;
+                let result: u16 = (a.wrapping_add(n8).wrapping_add(self.get_flag(Flag::C) as u16)) as u16;
+                if result > 0xFF {
+                    self.set_flag(Flag::C);
                 }
                 self.registers.pc += 2;
                 Instruction::ADC_A_n8
@@ -249,30 +262,19 @@ impl<T: Drawable> CPU<T> {
     fn replace_leftmost_byte(&self, bytes: u16, new_byte: u8) -> u16 {
         (bytes & 0x00FF) | ((new_byte as u16) << 8)
     }
-    fn get_carry_flag(&self) -> u8 {
-        let flags = (self.registers.af & 0x00FF) as u8;
-        (flags & (1 << 4)) >> 4
+    fn get_flag(&self, flag: Flag) -> u8 {
+        ((self.registers.af & (1 << flag.clone() as u8)) >> flag.clone() as u8) as u8
     }
-    fn set_zero_flag(&mut self) {
+    fn set_flag(&mut self, flag: Flag) {
         let mut flags = (self.registers.af & 0x00FF) as u8;
-        flags = flags | (1 << 7);
+        flags = flags | (1 << flag.clone() as u8);
         self.registers.af |= flags as u16;
     }
-    fn clear_n_flag(&mut self) {
+    fn clear_flag(&mut self, flag: Flag) {
         let mut flags = (self.registers.af & 0x00FF) as u8;
-        let mask = 1 << 6;
+        let mask = 1 << flag.clone() as u8;
         let a = (self.get_leftmost_byte(self.registers.af) as u16) << 8;
         self.registers.af = a | ((flags | mask) ^ mask) as u16;
-    }
-    fn set_h_flag(&mut self) {
-        let mut flags = (self.registers.af & 0x00FF) as u8;
-        flags = flags | (1 << 5);
-        self.registers.af |= flags as u16;
-    }
-    fn set_carry_flag(&mut self) {
-        let mut flags = (self.registers.af & 0x00FF) as u8;
-        flags = flags | (1 << 4);
-        self.registers.af |= flags as u16;
     }
 }
 
@@ -319,56 +321,55 @@ mod tests {
     }
 
     #[test]
-    fn should_return_carry_flag() {
+    fn should_correctly_return_flag_values_from_af_register() {
         let mut cpu = cpu();
-        cpu.registers.af = 0b0001_0000;
-        assert_eq!(cpu.get_carry_flag(), 1);
-        cpu.registers.af = 0b0000_0000;
-        assert_eq!(cpu.get_carry_flag(), 0);
+        cpu.registers.af = 0b00000000_10010000;
+        assert_eq!(cpu.get_flag(Flag::Z), 1);
+        assert_eq!(cpu.get_flag(Flag::N), 0);
+        assert_eq!(cpu.get_flag(Flag::H), 0);
+        assert_eq!(cpu.get_flag(Flag::C), 1);
     }
 
     #[test]
-    fn should_set_zero_flag() {
+    fn should_set_corresponding_flags_in_af_register() {
         let mut cpu = cpu();
-        cpu.registers.af = 0b11111111_00000000;
-        cpu.set_zero_flag();
-        assert_eq!(cpu.registers.af, 0b11111111_10000000);
-        cpu.registers.af = 0b01010010_10101010;
-        cpu.set_zero_flag();
-        assert_eq!(cpu.registers.af, 0b01010010_10101010);
-    }
 
-    #[test]
-    fn should_clear_n_flag() {
-        let mut cpu = cpu();
-        cpu.registers.af = 0b11111111_11111111;
-        cpu.clear_n_flag();
-        assert_eq!(cpu.registers.af, 0b11111111_10111111);
-        cpu.registers.af = 0b11111111_10111111;
-        cpu.clear_n_flag();
-        assert_eq!(cpu.registers.af, 0b11111111_10111111);
-    }
+        cpu.registers.af = 0x00;
+        cpu.set_flag(Flag::Z);
+        assert_eq!(cpu.registers.af, 0b00000000_10000000);
 
-    #[test]
-    fn should_set_h_flag() {
-        let mut cpu = cpu();
-        cpu.registers.af = 0b11111111_11011111;
-        cpu.set_h_flag();
-        assert_eq!(cpu.registers.af, 0b11111111_11111111);
-        cpu.registers.af = 0b11111111_11111111;
-        cpu.set_h_flag();
-        assert_eq!(cpu.registers.af, 0b11111111_11111111);
-    }
+        cpu.registers.af = 0x00;
+        cpu.set_flag(Flag::N);
+        assert_eq!(cpu.registers.af, 0b00000000_01000000);
 
-    #[test]
-    fn should_set_carry_flag() {
-        let mut cpu = cpu();
-        cpu.registers.af = 0b00000000_00000000;
-        cpu.set_carry_flag();
+        cpu.registers.af = 0x00;
+        cpu.set_flag(Flag::H);
+        assert_eq!(cpu.registers.af, 0b00000000_00100000);
+
+        cpu.registers.af = 0x00;
+        cpu.set_flag(Flag::C);
         assert_eq!(cpu.registers.af, 0b00000000_00010000);
-        cpu.registers.af = 0b00000000_00010000;
-        cpu.set_carry_flag();
-        assert_eq!(cpu.registers.af, 0b00000000_00010000);
+    }
+
+    #[test]
+    fn should_clear_corresponding_flags_in_af_register() {
+        let mut cpu = cpu();
+
+        cpu.registers.af = 0x00FF;
+        cpu.clear_flag(Flag::Z);
+        assert_eq!(cpu.registers.af, 0b00000000_01111111);
+
+        cpu.registers.af = 0x00FF;
+        cpu.clear_flag(Flag::N);
+        assert_eq!(cpu.registers.af, 0b00000000_10111111);
+
+        cpu.registers.af = 0x00FF;
+        cpu.clear_flag(Flag::H);
+        assert_eq!(cpu.registers.af, 0b00000000_11011111);
+
+        cpu.registers.af = 0x00FF;
+        cpu.clear_flag(Flag::C);
+        assert_eq!(cpu.registers.af, 0b00000000_11101111);
     }
 
     #[test]
@@ -381,6 +382,13 @@ mod tests {
         assert_eq!(instruction, Instruction::ADC_A_n8);
         assert_eq!(cpu.registers.pc, 2);
         assert_eq!(cpu.registers.af, 0x0600);
+        cpu.registers.pc = 0;
+        cpu.memory.memory[1] = 1;
+        cpu.registers.af = 0xFF00;
+        cpu.decode(0xCE);
+        assert_eq!(cpu.get_flag(Flag::Z), 1);
+        assert_eq!(cpu.get_flag(Flag::N), 0);
+        assert_eq!(cpu.get_flag(Flag::C), 1);
     }
 
     #[test]
