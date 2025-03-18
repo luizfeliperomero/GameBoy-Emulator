@@ -487,26 +487,32 @@ mod tests {
     #[test]
     fn dec_bc() {
         let mut cpu = cpu();
+        cpu.registers.pc = 0;
         cpu.registers.bc = 0x02;
         cpu.decode(0x0B);
         assert_eq!(cpu.registers.bc, 0x01);
+        assert_eq!(cpu.registers.pc, 1);
     }
 
     #[test]
     fn inc_bc() {
         let mut cpu = cpu();
+        cpu.registers.pc = 0;
         cpu.registers.bc = 0x01;
         cpu.decode(0x03);
         assert_eq!(cpu.registers.bc, 0x02);
+        assert_eq!(cpu.registers.pc, 1);
     }
 
     #[test]
     fn ld_hl_e() {
         let mut cpu = cpu();
+        cpu.registers.pc = 0;
         cpu.registers.hl = 0x00;
         cpu.memory.memory[cpu.registers.hl as usize] = 0x01;
         cpu.registers.de = 0xAB;
         cpu.decode(0x73);
         assert_eq!(cpu.memory.memory[cpu.registers.hl as usize], 0xAB);
+        assert_eq!(cpu.registers.pc, 1);
     }
 }
