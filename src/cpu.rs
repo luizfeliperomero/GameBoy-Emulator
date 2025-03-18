@@ -15,48 +15,66 @@ const FREQUENCY: u32 = 4_194_304;
 enum Instruction {
     ADC_A_n8,
     LD_H_HL,
-    Call_Z_a16,
+    Call_Z_a16(bool),
     DEC_BC,
     INC_BC,
     LD_HL_E,
+    NOP,
+}
+
+struct InstructionData {
+    mnemonic: &'static str,
+    opcode: u8,
+    cycles: u8,
+}
+
+impl Instruction {
+    fn data(&self) -> InstructionData {
+        match self {
+            Instruction::ADC_A_n8 => InstructionData {
+                mnemonic: "ADC A, n8",
+                opcode: 0xCE,
+                cycles: 8,
+            },
+            Instruction::LD_H_HL => InstructionData {
+                mnemonic: "LD H, [HL]",
+                opcode: 0x66,
+                cycles: 8,
+            },
+            Instruction::Call_Z_a16(z) => InstructionData {
+                mnemonic: "Call Z, a16",
+                opcode: 0xCC,
+                cycles: if *z { 24 } else { 12 },
+            },
+            Instruction::DEC_BC => InstructionData {
+                mnemonic: "DEC BC",
+                opcode: 0x0B,
+                cycles: 8,
+            },
+            Instruction::INC_BC => InstructionData {
+                mnemonic: "INC BC",
+                opcode: 0x03,
+                cycles: 8,
+            },
+            Instruction::LD_HL_E => InstructionData {
+                mnemonic: "LD [HL], E",
+                opcode: 0x73,
+                cycles: 8,
+            },
+            Instruction::NOP => InstructionData {
+                mnemonic: "NO OP",
+                opcode: 0x00,
+                cycles: 4,
+            },
+        }
+    }
 }
 
 #[cfg(feature = "debug")]
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let output = match self {
-            Instruction::ADC_A_n8 => {
-                let mnemonic = "ADC A, n8".bright_cyan();
-                let opcode = "0xCE";
-                format!("{mnemonic} ({opcode})")
-            }
-            Instruction::LD_H_HL => {
-                let mnemonic = "LD H, [HL]".bright_cyan();
-                let opcode = "0x66";
-                format!("{mnemonic} ({opcode})")
-            }
-            Instruction::Call_Z_a16 => {
-                let mnemonic = "Call Z, a16".bright_cyan();
-                let opcode = "0xCC";
-                format!("{mnemonic} ({opcode})")
-            }
-            Instruction::DEC_BC => {
-                let mnemonic = "DEC BC".bright_cyan();
-                let opcode = "0x0B";
-                format!("{mnemonic} ({opcode})")
-            }
-            Instruction::INC_BC => {
-                let mnemonic = "INC BC".bright_cyan();
-                let opcode = "0x03";
-                format!("{mnemonic} ({opcode})")
-            }
-            Instruction::LD_HL_E => {
-                let mnemonic = "LD [HL], E".bright_cyan();
-                let opcode = "0x73";
-                format!("{mnemonic} ({opcode})")
-            }
-        };
-        write!(f, "{}", output)
+        let data = self.data();
+        write!(f, "{} (0x{:02X?})", data.mnemonic.bright_cyan(), data.opcode)
     }
 }
 
@@ -103,10 +121,14 @@ impl<T: Drawable> CPU<T> {
     pub fn run(&mut self) {
         let mut cycles = 0;
         let one_sec = Duration::from_secs(1);
+        let mut next_cycle = 0;
         loop {
             let timer = Instant::now();
             while cycles < FREQUENCY {
-                self.cycle();
+                if next_cycle == cycles {
+                    let instruction = self.cycle();
+                    next_cycle = cycles + instruction.data().cycles as u32;
+                }
                 cycles += 1;
             }
             let elapsed = timer.elapsed();
@@ -268,7 +290,7 @@ impl<T: Drawable> CPU<T> {
                 let hl = self.registers.hl;
                 let h = self.get_high_byte(hl);
                 self.registers.hl =
-                    self.replace_high_byte(hl, self.memory.memory[hl as usize] as u8);
+                self.replace_high_byte(hl, self.memory.memory[hl as usize] as u8);
                 self.registers.pc += 1;
                 Instruction::LD_H_HL
             }
@@ -278,10 +300,11 @@ impl<T: Drawable> CPU<T> {
                     let high = self.memory.memory[(self.registers.pc + 2) as usize];
                     let addr = Self::concat_bytes(high, low);
                     self.registers.pc = addr;
+                    return Instruction::Call_Z_a16(true);
                 } else {
                     self.registers.pc += 3;
+                    return Instruction::Call_Z_a16(false);
                 }
-                Instruction::Call_Z_a16
             }
             0x0B => {
                 self.registers.bc = self.registers.bc.wrapping_sub(1);
@@ -297,6 +320,10 @@ impl<T: Drawable> CPU<T> {
                 self.memory.memory[self.registers.hl as usize] = self.get_low_byte(self.registers.de);
                 self.registers.pc += 1;
                 Instruction::LD_HL_E
+            }
+            0x00 => {
+                self.registers.pc += 1;
+                Instruction::NOP
             }
             _ => todo!(
                 "{}",
