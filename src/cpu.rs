@@ -18,6 +18,7 @@ enum Instruction {
     Call_Z_a16,
     DEC_BC,
     INC_BC,
+    LD_HL_E,
 }
 
 #[cfg(feature = "debug")]
@@ -47,6 +48,11 @@ impl fmt::Display for Instruction {
             Instruction::INC_BC => {
                 let mnemonic = "INC BC".bright_cyan();
                 let opcode = "0x03";
+                format!("{mnemonic} ({opcode})")
+            }
+            Instruction::LD_HL_E => {
+                let mnemonic = "LD [HL], E".bright_cyan();
+                let opcode = "0x73";
                 format!("{mnemonic} ({opcode})")
             }
         };
@@ -287,6 +293,11 @@ impl<T: Drawable> CPU<T> {
                 self.registers.pc += 1;
                 Instruction::INC_BC
             }
+            0x73 => {
+                self.memory.memory[self.registers.hl as usize] = self.get_low_byte(self.registers.de);
+                self.registers.pc += 1;
+                Instruction::LD_HL_E
+            }
             _ => todo!(
                 "{}",
                 format!("Unimplemented opcode: 0x{:02X?} at address 0x{:02X?}", opcode, self.registers.pc).as_str()
@@ -487,5 +498,15 @@ mod tests {
         cpu.registers.bc = 0x01;
         cpu.decode(0x03);
         assert_eq!(cpu.registers.bc, 0x02);
+    }
+
+    #[test]
+    fn ld_hl_e() {
+        let mut cpu = cpu();
+        cpu.registers.hl = 0x00;
+        cpu.memory.memory[cpu.registers.hl as usize] = 0x01;
+        cpu.registers.de = 0xAB;
+        cpu.decode(0x73);
+        assert_eq!(cpu.memory.memory[cpu.registers.hl as usize], 0xAB);
     }
 }
