@@ -17,6 +17,7 @@ enum Instruction {
     LD_H_HL,
     Call_Z_a16,
     DEC_BC,
+    INC_BC,
 }
 
 #[cfg(feature = "debug")]
@@ -41,6 +42,11 @@ impl fmt::Display for Instruction {
             Instruction::DEC_BC => {
                 let mnemonic = "DEC BC".bright_cyan();
                 let opcode = "0x0B";
+                format!("{mnemonic} ({opcode})")
+            }
+            Instruction::INC_BC => {
+                let mnemonic = "INC BC".bright_cyan();
+                let opcode = "0x03";
                 format!("{mnemonic} ({opcode})")
             }
         };
@@ -276,6 +282,11 @@ impl<T: Drawable> CPU<T> {
                 self.registers.pc += 1;
                 Instruction::DEC_BC
             }
+            0x03 => {
+                self.registers.bc = self.registers.bc.wrapping_add(1);
+                self.registers.pc += 1;
+                Instruction::INC_BC
+            }
             _ => todo!(
                 "{}",
                 format!("Unimplemented opcode: 0x{:02X?} at address 0x{:02X?}", opcode, self.registers.pc).as_str()
@@ -468,5 +479,13 @@ mod tests {
         cpu.registers.bc = 0x02;
         cpu.decode(0x0B);
         assert_eq!(cpu.registers.bc, 0x01);
+    }
+
+    #[test]
+    fn inc_bc() {
+        let mut cpu = cpu();
+        cpu.registers.bc = 0x01;
+        cpu.decode(0x03);
+        assert_eq!(cpu.registers.bc, 0x02);
     }
 }
