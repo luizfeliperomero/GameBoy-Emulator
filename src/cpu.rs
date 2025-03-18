@@ -15,8 +15,10 @@ const FREQUENCY: u32 = 4_194_304;
 enum Instruction {
     ADC_A_n8,
     LD_H_HL,
+    Call_Z_a16,
 }
 
+#[cfg(feature = "debug")]
 impl fmt::Display for Instruction {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let output = match self {
@@ -28,6 +30,11 @@ impl fmt::Display for Instruction {
             Instruction::LD_H_HL => {
                 let mnemonic = "LD H, [HL]".bright_cyan();
                 let opcode = "0x66";
+                format!("{mnemonic} ({opcode})")
+            }
+            Instruction::Call_Z_a16 => {
+                let mnemonic = "Call Z, a16".bright_cyan();
+                let opcode = "0xCC";
                 format!("{mnemonic} ({opcode})")
             }
         };
@@ -225,7 +232,7 @@ impl<T: Drawable> CPU<T> {
                     self.set_flag(Flag::Z);
                 }
                 self.clear_flag(Flag::N);
-                let half_carry = (a & 0xF) + (n8 & 0xF) + self.get_flag(Flag::C) > 0x0F;
+                let half_carry = ((a & 0xF) + (n8 & 0xF) + self.get_flag(Flag::C)) > 0x0F;
                 if half_carry {
                     self.set_flag(Flag::H);
                 }
@@ -247,9 +254,20 @@ impl<T: Drawable> CPU<T> {
                 self.registers.pc += 1;
                 Instruction::LD_H_HL
             }
+            0xCC => {
+                if self.get_flag(Flag::Z) != 0 {
+                    let low = self.memory.memory[(self.registers.pc + 1) as usize];
+                    let high = self.memory.memory[(self.registers.pc + 2) as usize];
+                    let addr = Self::concat_bytes(high, low);
+                    self.registers.pc = addr;
+                } else {
+                    self.registers.pc += 3;
+                }
+                Instruction::Call_Z_a16
+            }
             _ => todo!(
                 "{}",
-                format!("Unimplemented opcode: {:02X?}", opcode).as_str()
+                format!("Unimplemented opcode: 0x{:02X?} at address 0x{:02X?}", opcode, self.registers.pc).as_str()
             ),
         }
     }
@@ -275,6 +293,9 @@ impl<T: Drawable> CPU<T> {
         let mask = 1 << flag.clone() as u8;
         let a = (self.get_leftmost_byte(self.registers.af) as u16) << 8;
         self.registers.af = a | ((flags | mask) ^ mask) as u16;
+    }
+    fn concat_bytes(high: u8, low: u8) -> u16 {
+        ((high as u16) << 8) | low as u16
     }
 }
 
@@ -373,8 +394,14 @@ mod tests {
     }
 
     #[test]
+    fn should_concatenate_bytes() {
+        assert_eq!(CPU::<FakeGPU>::concat_bytes(0x10, 0xAC), 0x10AC);
+    }
+
+    #[test]
     fn adc_a_n8() {
         let mut cpu = cpu();
+
         cpu.registers.pc = 0;
         cpu.memory.memory[1] = 5;
         cpu.registers.af = 0x0100;
@@ -382,6 +409,7 @@ mod tests {
         assert_eq!(instruction, Instruction::ADC_A_n8);
         assert_eq!(cpu.registers.pc, 2);
         assert_eq!(cpu.registers.af, 0x0600);
+
         cpu.registers.pc = 0;
         cpu.memory.memory[1] = 1;
         cpu.registers.af = 0xFF00;
@@ -389,6 +417,7 @@ mod tests {
         assert_eq!(cpu.get_flag(Flag::Z), 1);
         assert_eq!(cpu.get_flag(Flag::N), 0);
         assert_eq!(cpu.get_flag(Flag::C), 1);
+        assert_eq!(cpu.get_flag(Flag::H), 1);
     }
 
     #[test]
@@ -401,5 +430,24 @@ mod tests {
         assert_eq!(instruction, Instruction::LD_H_HL);
         assert_eq!(cpu.registers.pc, 1);
         assert_eq!(cpu.registers.hl, 0x0A02);
+    }
+
+    #[test]
+    fn call_z_a16() {
+        let mut cpu = cpu();
+        cpu.registers.af = 0xFF;
+        cpu.registers.pc = 0;
+        cpu.memory.memory[1] = 0xCD;
+        cpu.memory.memory[2] = 0xAB;
+        cpu.decode(0xCC);
+        assert_eq!(cpu.registers.pc, 0xABCD);
+
+
+        cpu.registers.af = 0x00;
+        cpu.registers.pc = 0;
+        cpu.memory.memory[1] = 0xCD;
+        cpu.memory.memory[2] = 0xAB;
+        cpu.decode(0xCC);
+        assert_eq!(cpu.registers.pc, 3);
     }
 }
