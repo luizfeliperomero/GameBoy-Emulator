@@ -235,10 +235,10 @@ impl<T: Drawable> CPU<T> {
         match opcode {
             0xCE => {
                 let af = self.registers.af;
-                let a = self.get_leftmost_byte(af);
+                let a = self.get_high_byte(af);
                 let n8 = self.memory.memory[(self.registers.pc + 1) as usize];
                 let result = a.wrapping_add(n8).wrapping_add(self.get_flag(Flag::C));
-                self.registers.af = self.replace_leftmost_byte(af, result);
+                self.registers.af = self.replace_high_byte(af, result);
 
                 if result == 0 {
                     self.set_flag(Flag::Z);
@@ -260,9 +260,9 @@ impl<T: Drawable> CPU<T> {
             }
             0x66 => {
                 let hl = self.registers.hl;
-                let h = self.get_leftmost_byte(hl);
+                let h = self.get_high_byte(hl);
                 self.registers.hl =
-                    self.replace_leftmost_byte(hl, self.memory.memory[hl as usize] as u8);
+                    self.replace_high_byte(hl, self.memory.memory[hl as usize] as u8);
                 self.registers.pc += 1;
                 Instruction::LD_H_HL
             }
@@ -293,13 +293,13 @@ impl<T: Drawable> CPU<T> {
             ),
         }
     }
-    fn get_leftmost_byte(&self, bytes: u16) -> u8 {
+    fn get_high_byte(&self, bytes: u16) -> u8 {
         ((bytes & 0xFF00) >> 8) as u8
     }
-    fn get_rightmost_byte(&self, bytes: u16) -> u8 {
+    fn get_low_byte(&self, bytes: u16) -> u8 {
         (bytes & 0x00FF) as u8
     }
-    fn replace_leftmost_byte(&self, bytes: u16, new_byte: u8) -> u16 {
+    fn replace_high_byte(&self, bytes: u16, new_byte: u8) -> u16 {
         (bytes & 0x00FF) | ((new_byte as u16) << 8)
     }
     fn get_flag(&self, flag: Flag) -> u8 {
@@ -313,7 +313,7 @@ impl<T: Drawable> CPU<T> {
     fn clear_flag(&mut self, flag: Flag) {
         let mut flags = (self.registers.af & 0x00FF) as u8;
         let mask = 1 << flag.clone() as u8;
-        let a = (self.get_leftmost_byte(self.registers.af) as u16) << 8;
+        let a = (self.get_high_byte(self.registers.af) as u16) << 8;
         self.registers.af = a | ((flags | mask) ^ mask) as u16;
     }
     fn concat_bytes(high: u8, low: u8) -> u16 {
@@ -338,29 +338,29 @@ mod tests {
     }
 
     #[test]
-    fn should_return_leftmost_byte() {
+    fn should_return_high_byte() {
         let cpu = cpu();
-        assert_eq!(cpu.get_leftmost_byte(0xFF00), 0xFF);
-        assert_eq!(cpu.get_leftmost_byte(0x00FF), 0x00);
-        assert_eq!(cpu.get_leftmost_byte(0xCE03), 0xCE);
-        assert_eq!(cpu.get_leftmost_byte(0xAF30), 0xAF);
+        assert_eq!(cpu.get_high_byte(0xFF00), 0xFF);
+        assert_eq!(cpu.get_high_byte(0x00FF), 0x00);
+        assert_eq!(cpu.get_high_byte(0xCE03), 0xCE);
+        assert_eq!(cpu.get_high_byte(0xAF30), 0xAF);
     }
 
     #[test]
-    fn should_return_rightmost_byte() {
+    fn should_return_low_byte() {
         let cpu = cpu();
-        assert_eq!(cpu.get_rightmost_byte(0xFF00), 0x00);
-        assert_eq!(cpu.get_rightmost_byte(0x00FF), 0xFF);
-        assert_eq!(cpu.get_rightmost_byte(0x1ABC), 0xBC);
-        assert_eq!(cpu.get_rightmost_byte(0xCA12), 0x12);
+        assert_eq!(cpu.get_low_byte(0xFF00), 0x00);
+        assert_eq!(cpu.get_low_byte(0x00FF), 0xFF);
+        assert_eq!(cpu.get_low_byte(0x1ABC), 0xBC);
+        assert_eq!(cpu.get_low_byte(0xCA12), 0x12);
     }
 
     #[test]
-    fn should_replace_leftmost_byte() {
+    fn should_replace_high_byte() {
         let cpu = cpu();
-        assert_eq!(cpu.replace_leftmost_byte(0xFF00, 0xAC), 0xAC00);
-        assert_eq!(cpu.replace_leftmost_byte(0x0000, 0xFF), 0xFF00);
-        assert_eq!(cpu.replace_leftmost_byte(0xAB34, 0xDA), 0xDA34);
+        assert_eq!(cpu.replace_high_byte(0xFF00, 0xAC), 0xAC00);
+        assert_eq!(cpu.replace_high_byte(0x0000, 0xFF), 0xFF00);
+        assert_eq!(cpu.replace_high_byte(0xAB34, 0xDA), 0xDA34);
     }
 
     #[test]
