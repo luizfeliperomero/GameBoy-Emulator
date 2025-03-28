@@ -142,6 +142,26 @@ impl<T: Drawable> CPU<T> {
     fn cycle(&mut self) -> Instruction {
         let opcode: u8 = self.memory.memory[self.registers.pc as usize];
         let instruction = self.decode(opcode);
+        //let tile_map: [u8; 16] = self.memory.memory[(self.memory.map.tile_map.start) as usize..(self.memory.map.tile_map.end + 1) as usize];
+        let tile_map_start = self.memory.map.tile_map.start as usize;
+        let tile_map_end = self.memory.map.tile_map.end as usize;
+        let tile_map = &self.memory.memory[tile_map_start..tile_map_end + 1];
+
+        tile_map.iter()
+                .step_by(16)
+                .enumerate()
+                .for_each(|(i, t)| {
+                    let tile_addr_index = (i * 16) as usize;
+                    let tile_index_start = tile_map[tile_addr_index] as usize;
+                    let tile_index_end = (tile_index_start + 16) as usize;
+
+                    let tile = &self.memory.memory[tile_index_start..tile_index_end];
+                    let arranged_tiles = self.gpu.arrange_tile_bytes(tile);
+                    let mapped = self.gpu.map_tile_pixels(&arranged_tiles);
+
+                    self.gpu.set_tile_on_display(&mapped, tile_index_start);
+                });
+
         self.gpu.draw();
         instruction
     }
@@ -367,6 +387,11 @@ mod tests {
     struct FakeGPU {}
     impl Drawable for FakeGPU {
         fn draw(&mut self) {}
+        fn map_tile_pixels(&self, tile: &[u8; 16]) -> [u8; 192] {[0; 192]}
+        fn arrange_tile_bytes(&self, tile: &[u8]) -> [u8; 16] {[0; 16]}
+        fn extract_high_bits(&self, byte: u8) -> u8 {0} 
+        fn extract_low_bits(&self, byte: u8) -> u8 {0}
+        fn set_tile_on_display(&mut self, tile: &[u8; 192], position: usize) {}
     }
 
     fn cpu() -> CPU<FakeGPU> {
