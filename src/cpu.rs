@@ -517,6 +517,18 @@ mod tests {
     }
 
     #[test]
+    fn should_return_cb_opcode() {
+        assert_eq!(CPU::<FakeGPU>::get_leftmost_five_bits(0b00000_0000), 0b0000_0000);
+        assert_eq!(CPU::<FakeGPU>::get_leftmost_five_bits(0b0000_1000), 0b0000_0001);
+        assert_eq!(CPU::<FakeGPU>::get_leftmost_five_bits(0b0001_0000), 0b0000_0010);
+        assert_eq!(CPU::<FakeGPU>::get_leftmost_five_bits(0b0001_1000), 0b0000_0011);
+        assert_eq!(CPU::<FakeGPU>::get_leftmost_five_bits(0b0010_0000), 0b0000_0100);
+        assert_eq!(CPU::<FakeGPU>::get_leftmost_five_bits(0b0010_1000), 0b0000_0101);
+        assert_eq!(CPU::<FakeGPU>::get_leftmost_five_bits(0b0011_0000), 0b0000_0110);
+        assert_eq!(CPU::<FakeGPU>::get_leftmost_five_bits(0b0011_1000), 0b0000_0111);
+    }
+
+    #[test]
     fn should_return_high_byte() {
         let cpu = cpu();
         assert_eq!(cpu.get_high_byte(0xFF00), 0xFF);
@@ -600,21 +612,21 @@ mod tests {
     }
 
     #[test]
+    // 0xCE
     fn adc_a_n8() {
         let mut cpu = cpu();
 
         cpu.registers.pc = 0;
         cpu.memory.memory[1] = 5;
         cpu.registers.af = 0x0100;
-        let instruction = cpu.decode(0xCE);
-        assert_eq!(instruction, Instruction::ADC_A_n8);
+        assert_eq!(Instruction::ADC_A_n8, cpu.decode(0xCE));
         assert_eq!(cpu.registers.pc, 2);
         assert_eq!(cpu.registers.af, 0x0600);
 
         cpu.registers.pc = 0;
         cpu.memory.memory[1] = 1;
         cpu.registers.af = 0xFF00;
-        cpu.decode(0xCE);
+        assert_eq!(Instruction::ADC_A_n8, cpu.decode(0xCE));
         assert_eq!(cpu.get_flag(Flag::Z), 1);
         assert_eq!(cpu.get_flag(Flag::N), 0);
         assert_eq!(cpu.get_flag(Flag::C), 1);
@@ -622,25 +634,26 @@ mod tests {
     }
 
     #[test]
+    // 0x66
     fn ld_h_hl() {
         let mut cpu = cpu();
         cpu.registers.pc = 0;
         cpu.registers.hl = 0xFF02;
         cpu.memory.memory[0xFF02] = 0xA;
-        let instruction = cpu.decode(0x66);
-        assert_eq!(instruction, Instruction::LD_H_HL);
+        assert_eq!(Instruction::LD_H_HL, cpu.decode(0x66));
         assert_eq!(cpu.registers.pc, 1);
         assert_eq!(cpu.registers.hl, 0x0A02);
     }
 
     #[test]
+    // 0xCC
     fn call_z_a16() {
         let mut cpu = cpu();
         cpu.registers.af = 0xFF;
         cpu.registers.pc = 0;
         cpu.memory.memory[1] = 0xCD;
         cpu.memory.memory[2] = 0xAB;
-        cpu.decode(0xCC);
+        assert_eq!(Instruction::Call_Z_a16(true), cpu.decode(0xCC));
         assert_eq!(cpu.registers.pc, 0xABCD);
 
 
@@ -648,39 +661,115 @@ mod tests {
         cpu.registers.pc = 0;
         cpu.memory.memory[1] = 0xCD;
         cpu.memory.memory[2] = 0xAB;
-        cpu.decode(0xCC);
+        assert_eq!(Instruction::Call_Z_a16(false), cpu.decode(0xCC));
         assert_eq!(cpu.registers.pc, 3);
     }
 
     #[test]
+    // 0x0B
     fn dec_bc() {
         let mut cpu = cpu();
         cpu.registers.pc = 0;
         cpu.registers.bc = 0x02;
-        cpu.decode(0x0B);
+        assert_eq!(Instruction::DEC_BC, cpu.decode(0x0B));
         assert_eq!(cpu.registers.bc, 0x01);
         assert_eq!(cpu.registers.pc, 1);
     }
 
     #[test]
+    // 0x03
     fn inc_bc() {
         let mut cpu = cpu();
         cpu.registers.pc = 0;
         cpu.registers.bc = 0x01;
-        cpu.decode(0x03);
+        assert_eq!(Instruction::INC_BC, cpu.decode(0x03));
         assert_eq!(cpu.registers.bc, 0x02);
         assert_eq!(cpu.registers.pc, 1);
     }
 
     #[test]
+    // 0x73
     fn ld_hl_e() {
         let mut cpu = cpu();
         cpu.registers.pc = 0;
         cpu.registers.hl = 0x00;
         cpu.memory.memory[cpu.registers.hl as usize] = 0x01;
         cpu.registers.de = 0xAB;
-        cpu.decode(0x73);
+        assert_eq!(Instruction::LD_HL_E, cpu.decode(0x73));
         assert_eq!(cpu.memory.memory[cpu.registers.hl as usize], 0xAB);
         assert_eq!(cpu.registers.pc, 1);
     }
+
+    #[test]
+    // 0x0
+    fn nop() {
+        let mut cpu = cpu();
+        cpu.registers.pc = 0;
+        assert_eq!(Instruction::NOP, cpu.decode(0x00));
+        assert_eq!(cpu.registers.pc, 1);
+    }
+
+    #[test]
+    // 0x20
+    fn jr_nz_e8() {
+        let mut cpu = cpu();
+        cpu.registers.pc = 2;
+        cpu.registers.af = 0b00000000_10000000;
+        cpu.memory.memory[(cpu.registers.pc + 1) as usize] = 0xFF;
+        assert_eq!(Instruction::JR_NZ_e8(false), cpu.decode(0x20));
+        assert_eq!(cpu.registers.pc, 4);
+
+
+        cpu.registers.pc = 2;
+        cpu.registers.af = 0;
+        cpu.memory.memory[(cpu.registers.pc + 1) as usize] = 0xFF;
+        assert_eq!(Instruction::JR_NZ_e8(true), cpu.decode(0x20));
+        assert_eq!(cpu.registers.pc, 3);
+    } 
+
+    #[test]
+    // 0x21
+    fn ld_hl_n16() {
+        let mut cpu = cpu();
+        cpu.registers.pc = 0;
+        cpu.registers.hl = 0;
+        cpu.memory.memory[(cpu.registers.pc + 1) as usize] = 0xCD;
+        cpu.memory.memory[(cpu.registers.pc + 2) as usize] = 0xAB;
+        assert_eq!(Instruction::LD_HL_n16, cpu.decode(0x21));
+        assert_eq!(cpu.registers.hl, 0xABCD);
+    }
+
+    #[test]
+    // 0x31
+    fn ld_sp_n16() {
+        let mut cpu = cpu();
+        cpu.registers.pc = 0;
+        cpu.registers.sp = 0;
+        cpu.memory.memory[(cpu.registers.pc + 1) as usize] = 0xCD;
+        cpu.memory.memory[(cpu.registers.pc + 2) as usize] = 0xAB;
+        assert_eq!(Instruction::LD_SP_n16, cpu.decode(0x31));
+        assert_eq!(cpu.registers.sp, 0xABCD);
+    }
+
+    #[test]
+    // 0x32
+    fn ld_hl_dec_a() {
+        let mut cpu = cpu();
+        cpu.registers.hl = 2;
+        cpu.registers.af = 0xABCD;
+        cpu.memory.memory[cpu.registers.hl as usize] = 0;
+        assert_eq!(Instruction::LD_HL_DEC_A, cpu.decode(0x32));
+        assert_eq!(cpu.memory.memory[(cpu.registers.hl + 1) as usize], 0xAB);
+        assert_eq!(cpu.registers.hl, 1);
+    }
+
+    #[test]
+    // 0xAF
+    fn xor_a_a() {
+        let mut cpu = cpu();
+        cpu.registers.af = 0xAB00;
+        assert_eq!(Instruction::XOR_A_A, cpu.decode(0xAF));
+        assert_eq!(0x0080, cpu.registers.af);
+    }
+
 }
