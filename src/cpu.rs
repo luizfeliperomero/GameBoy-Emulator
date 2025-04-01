@@ -20,6 +20,12 @@ enum Instruction {
     INC_BC,
     LD_HL_E,
     NOP,
+    LD_SP_n16,
+    XOR_A_A,
+    LD_HL_n16,
+    LD_HL_DEC_A,
+    PREFIX,
+    JR_NZ_e8(bool),
 }
 
 struct InstructionData {
@@ -66,6 +72,36 @@ impl Instruction {
                 opcode: 0x00,
                 cycles: 4,
             },
+            Instruction::LD_SP_n16 => InstructionData {
+                mnemonic: "LD SP, n16",
+                opcode: 0x31,
+                cycles: 12,
+            },
+            Instruction::XOR_A_A => InstructionData {
+                mnemonic: "XOR A, A",
+                opcode: 0xAF,
+                cycles: 4,
+            },
+            Instruction::LD_HL_n16 => InstructionData {
+                mnemonic: "LD HL, n16",
+                opcode: 0x21,
+                cycles: 12,
+            },
+            Instruction::LD_HL_DEC_A => InstructionData {
+                mnemonic: "LD [HL-], A",
+                opcode: 0x32,
+                cycles: 8,
+            },
+            Instruction::PREFIX => InstructionData {
+                mnemonic: "PREFIX",
+                opcode: 0xCB,
+                cycles: 4,
+            },
+            Instruction::JR_NZ_e8(z) => InstructionData {
+                mnemonic: "JR NZ, e8",
+                opcode: 0x20,
+                cycles: if *z {12} else {8},
+            },
         }
     }
 }
@@ -110,7 +146,7 @@ impl<T: Drawable> CPU<T> {
                 de: 0,
                 hl: 0,
                 sp: 0,
-                pc: 0x0104,
+                pc: 0,
             },
             memory,
             gpu,
@@ -261,6 +297,118 @@ impl<T: Drawable> CPU<T> {
     }
     fn decode(&mut self, opcode: u8) -> Instruction {
         match opcode {
+            0x00 => {
+                self.registers.pc += 1;
+                Instruction::NOP
+            }
+            0x03 => {
+                self.registers.bc = self.registers.bc.wrapping_add(1);
+                self.registers.pc += 1;
+                Instruction::INC_BC
+            }
+            0x0B => {
+                self.registers.bc = self.registers.bc.wrapping_sub(1);
+                self.registers.pc += 1;
+                Instruction::DEC_BC
+            }
+            0x20 => {
+                let mut jump: bool = false;
+                if self.get_flag(Flag::Z) == 0 {
+                    let e8 = self.memory.memory[(self.registers.pc + 1) as usize] as i8;
+                    self.registers.pc = (self.registers.pc as i16 + e8 as i16) as u16;
+                    jump = true;
+                }
+                self.registers.pc += 2;
+                Instruction::JR_NZ_e8(jump)
+            }
+            0x21 => {
+                let low = self.memory.memory[(self.registers.pc + 1) as usize];
+                let high = self.memory.memory[(self.registers.pc + 2) as usize];
+                self.registers.hl = Self::concat_bytes(high, low);
+                self.registers.pc += 3;
+                Instruction::LD_HL_n16
+            }
+            0x31 => {
+                let low = self.memory.memory[(self.registers.pc + 1) as usize];
+                let high = self.memory.memory[(self.registers.pc + 2) as usize];
+                self.registers.sp = Self::concat_bytes(high, low);
+                self.registers.pc += 3;
+                Instruction::LD_SP_n16
+            }
+            0x32 => {
+                self.memory.memory[self.registers.hl as usize] = self.get_high_byte(self.registers.af);
+                self.registers.hl -= 1;
+                self.registers.pc += 1;
+                Instruction::LD_HL_DEC_A
+            }
+            0x73 => {
+                self.memory.memory[self.registers.hl as usize] = self.get_low_byte(self.registers.de);
+                self.registers.pc += 1;
+                Instruction::LD_HL_E
+            }
+            0xCB => {
+                let instruction = self.memory.memory[(self.registers.pc + 1) as usize];
+                let prefix_opcode = (instruction & 0b1100_0000) >> 6;
+                if prefix_opcode == 0 {
+                    let cb_opcode = (instruction & 0b0011_1000) >> 3;
+                    match cb_opcode {
+                        _ => {
+                            panic!("Unknown CB opcode: {}", cb_opcode);
+                        }
+                    }
+                } else {
+                    let bit_index = (instruction & 0b0011_1000) >> 3;
+                    let value = instruction & 0b0000_0111;
+                    let operand = self.get_cb_operand(value);
+                    match prefix_opcode {
+                        0x1 => {
+                            let bit = (operand & (1 << bit_index)) >> bit_index;
+                            if bit == 1 {
+                                self.set_flag(Flag::Z);
+                            } else {
+                                self.clear_flag(Flag::Z);
+                            }
+                            self.clear_flag(Flag::N);
+                            self.set_flag(Flag::H);
+                        }
+                        _ => {
+                            panic!("Unknown CB opcode: {}", prefix_opcode);
+                        }
+                    }
+                }
+                self.registers.pc += 2;
+                Instruction::PREFIX
+            }
+            0x66 => {
+                let hl = self.registers.hl;
+                let h = self.get_high_byte(hl);
+                self.registers.hl =
+                self.replace_high_byte(hl, self.memory.memory[hl as usize] as u8);
+                self.registers.pc += 1;
+                Instruction::LD_H_HL
+            }
+            0xAF => {
+                let af = self.registers.af;
+                self.registers.af = self.replace_high_byte(af, 0);
+                self.set_flag(Flag::Z);
+                self.clear_flag(Flag::N);
+                self.clear_flag(Flag::H);
+                self.clear_flag(Flag::C);
+                self.registers.pc += 1;
+                Instruction::XOR_A_A
+            }
+            0xCC => {
+                if self.get_flag(Flag::Z) != 0 {
+                    let low = self.memory.memory[(self.registers.pc + 1) as usize];
+                    let high = self.memory.memory[(self.registers.pc + 2) as usize];
+                    let addr = Self::concat_bytes(high, low);
+                    self.registers.pc = addr;
+                    return Instruction::Call_Z_a16(true);
+                } else {
+                    self.registers.pc += 3;
+                    return Instruction::Call_Z_a16(false);
+                }
+            }
             0xCE => {
                 let af = self.registers.af;
                 let a = self.get_high_byte(af);
@@ -285,45 +433,6 @@ impl<T: Drawable> CPU<T> {
                 }
                 self.registers.pc += 2;
                 Instruction::ADC_A_n8
-            }
-            0x66 => {
-                let hl = self.registers.hl;
-                let h = self.get_high_byte(hl);
-                self.registers.hl =
-                self.replace_high_byte(hl, self.memory.memory[hl as usize] as u8);
-                self.registers.pc += 1;
-                Instruction::LD_H_HL
-            }
-            0xCC => {
-                if self.get_flag(Flag::Z) != 0 {
-                    let low = self.memory.memory[(self.registers.pc + 1) as usize];
-                    let high = self.memory.memory[(self.registers.pc + 2) as usize];
-                    let addr = Self::concat_bytes(high, low);
-                    self.registers.pc = addr;
-                    return Instruction::Call_Z_a16(true);
-                } else {
-                    self.registers.pc += 3;
-                    return Instruction::Call_Z_a16(false);
-                }
-            }
-            0x0B => {
-                self.registers.bc = self.registers.bc.wrapping_sub(1);
-                self.registers.pc += 1;
-                Instruction::DEC_BC
-            }
-            0x03 => {
-                self.registers.bc = self.registers.bc.wrapping_add(1);
-                self.registers.pc += 1;
-                Instruction::INC_BC
-            }
-            0x73 => {
-                self.memory.memory[self.registers.hl as usize] = self.get_low_byte(self.registers.de);
-                self.registers.pc += 1;
-                Instruction::LD_HL_E
-            }
-            0x00 => {
-                self.registers.pc += 1;
-                Instruction::NOP
             }
             _ => todo!(
                 "{}",
@@ -356,6 +465,38 @@ impl<T: Drawable> CPU<T> {
     }
     fn concat_bytes(high: u8, low: u8) -> u16 {
         ((high as u16) << 8) | low as u16
+    }
+    fn get_leftmost_five_bits(instruction: u8) -> u8 {
+        (instruction & 0b1111_1000) >> 3
+    }
+    fn get_cb_operand(&self, value: u8) -> u8 {
+        match value {
+            0x0 => {
+                self.get_high_byte(self.registers.bc)
+            }
+            0x1 => {
+                self.get_low_byte(self.registers.bc)
+            }
+            0x2 => {
+                self.get_high_byte(self.registers.de)
+            }
+            0x3 => {
+                self.get_low_byte(self.registers.de)
+            }
+            0x4 => {
+                self.get_high_byte(self.registers.hl)
+            }
+            0x5 => {
+                self.get_low_byte(self.registers.hl)
+            }
+            0x6 => {
+                self.memory.memory[self.registers.hl as usize]
+            }
+            0x7 => {
+                self.get_high_byte(self.registers.af)
+            }
+            _ => {0}
+        }
     }
 }
 
