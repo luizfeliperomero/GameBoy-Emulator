@@ -12,7 +12,7 @@ pub mod memory;
 
 fn main() {
     let mut mem = Memory::new();
-    match mem.load_rom("roms/super-mario-land.gb") {
+    match mem.load_rom("roms/dmg_rom.bin") {
         Ok(_) => {
             let mut gpu = GPU::new();
             let mut cpu = CPU::new(mem, gpu);
