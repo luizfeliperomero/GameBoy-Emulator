@@ -516,6 +516,13 @@ mod tests {
         CPU::new(mem, gpu)
     }
 
+    fn assert_flags(cpu: &CPU<FakeGPU>, z: bool, n: bool, h: bool, c: bool) {
+        assert_eq!(cpu.get_flag(Flag::Z), z as u8);
+        assert_eq!(cpu.get_flag(Flag::N), n as u8);
+        assert_eq!(cpu.get_flag(Flag::H), h as u8);
+        assert_eq!(cpu.get_flag(Flag::C), c as u8);
+    }
+
     #[test]
     fn should_return_cb_opcode() {
         assert_eq!(CPU::<FakeGPU>::get_leftmost_five_bits(0b00000_0000), 0b0000_0000);
@@ -627,10 +634,7 @@ mod tests {
         cpu.memory.memory[1] = 1;
         cpu.registers.af = 0xFF00;
         assert_eq!(Instruction::ADC_A_n8, cpu.decode(0xCE));
-        assert_eq!(cpu.get_flag(Flag::Z), 1);
-        assert_eq!(cpu.get_flag(Flag::N), 0);
-        assert_eq!(cpu.get_flag(Flag::C), 1);
-        assert_eq!(cpu.get_flag(Flag::H), 1);
+        assert_flags(&cpu, true, false, true, true);
     }
 
     #[test]
@@ -770,6 +774,7 @@ mod tests {
         cpu.registers.af = 0xAB00;
         assert_eq!(Instruction::XOR_A_A, cpu.decode(0xAF));
         assert_eq!(0x0080, cpu.registers.af);
+        assert_flags(&cpu, true, false, false, false);
     }
 
 }
