@@ -11,27 +11,27 @@ use std::error::Error;
 use std::fs;
 
 const MEMORY_SIZE: usize = 2_usize.pow(16);
-struct Range {
-    start: u16,
-    end: u16,
+pub struct Range {
+    pub start: u16,
+    pub end: u16,
 }
 impl Range {
     fn new(start: u16, end: u16) -> Self {
         Self { start, end }
     }
 }
-struct MemoryMap {
+pub struct MemoryMap {
     rom: Range,
     v_ram: Range,
     external_ram: Range,
     work_ram: Range,
     oam: Range,
     io: Range,
-    h_ram: Range,
+    pub h_ram: Range,
 }
 pub struct Memory {
     pub memory: [u8; MEMORY_SIZE],
-    map: MemoryMap,
+    pub map: MemoryMap,
     rom_size: usize,
 }
 impl Memory {
