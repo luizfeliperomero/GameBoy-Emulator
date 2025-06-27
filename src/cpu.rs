@@ -23,9 +23,14 @@ enum Instruction {
     LD_SP_n16,
     XOR_A_A,
     LD_HL_n16,
+    LD_HL_A,
     LD_HL_DEC_A,
     PREFIX,
     JR_NZ_e8(bool),
+    LD_C_n8,
+    LD_A_n8,
+    LDH_C_A,
+    INC_C,
 }
 
 struct InstructionData {
@@ -101,6 +106,31 @@ impl Instruction {
                 mnemonic: "JR NZ, e8",
                 opcode: 0x20,
                 cycles: if *z {12} else {8},
+            },
+            Instruction::LD_C_n8 => InstructionData {
+                mnemonic: "LD C, n8",
+                opcode: 0x0E,
+                cycles: 8,
+            },
+            Instruction::LD_A_n8 => InstructionData {
+                mnemonic: "LD A, n8",
+                opcode: 0x3E,
+                cycles: 8,
+            },
+            Instruction::LDH_C_A=> InstructionData {
+                mnemonic: "LDH [C], A",
+                opcode: 0xE2,
+                cycles: 8,
+            },
+            Instruction::INC_C => InstructionData {
+                mnemonic: "INC C",
+                opcode: 0x0C,
+                cycles: 4,
+            },
+            Instruction::LD_HL_A => InstructionData {
+                mnemonic: "LD [HL], A",
+                opcode: 0x77,
+                cycles: 8,
             },
         }
     }
@@ -311,6 +341,27 @@ impl<T: Drawable> CPU<T> {
                 self.registers.pc += 1;
                 Instruction::DEC_BC
             }
+            0x0C => {
+                let c = self.get_low_byte(self.registers.bc);
+                let result = c.wrapping_add(1);
+                self.registers.bc = self.replace_low_byte(self.registers.bc, result); 
+                if result == 0 {
+                    self.set_flag(Flag::Z);
+                }
+                self.clear_flag(Flag::N);
+                if c & 0x0F == 0x0F {
+                    self.set_flag(Flag::H);
+                } else {
+                    self.clear_flag(Flag::H);
+                }
+                self.registers.pc += 1;
+                Instruction::INC_C
+            }
+            0x0E => {
+                self.registers.bc = self.replace_low_byte(self.registers.bc, self.memory.memory[(self.registers.pc + 1) as usize]);
+                self.registers.pc += 2;
+                Instruction::LD_C_n8
+            }
             0x20 => {
                 let mut jump: bool = false;
                 if self.get_flag(Flag::Z) == 0 {
@@ -341,10 +392,20 @@ impl<T: Drawable> CPU<T> {
                 self.registers.pc += 1;
                 Instruction::LD_HL_DEC_A
             }
+            0x3E => {
+                self.registers.af = self.replace_high_byte(self.registers.af, self.memory.memory[(self.registers.pc + 1) as usize]);
+                self.registers.pc += 2;
+                Instruction::LD_A_n8
+            }
             0x73 => {
                 self.memory.memory[self.registers.hl as usize] = self.get_low_byte(self.registers.de);
                 self.registers.pc += 1;
                 Instruction::LD_HL_E
+            }
+            0x77 => {
+                self.memory.memory[self.registers.hl as usize] = self.get_high_byte(self.registers.af);
+                self.registers.pc += 1;
+                Instruction::LD_HL_A
             }
             0xCB => {
                 let instruction = self.memory.memory[(self.registers.pc + 1) as usize];
@@ -434,6 +495,12 @@ impl<T: Drawable> CPU<T> {
                 self.registers.pc += 2;
                 Instruction::ADC_A_n8
             }
+            0xE2 => {
+                let c = self.get_low_byte(self.registers.bc);
+                self.memory.memory[(self.memory.map.h_ram.start + c as u16) as usize] = self.get_high_byte(self.registers.af);
+                self.registers.pc += 1;
+                Instruction::LDH_C_A
+            }
             _ => todo!(
                 "{}",
                 format!("Unimplemented opcode: 0x{:02X?} at address 0x{:02X?}", opcode, self.registers.pc).as_str()
@@ -448,6 +515,9 @@ impl<T: Drawable> CPU<T> {
     }
     fn replace_high_byte(&self, bytes: u16, new_byte: u8) -> u16 {
         (bytes & 0x00FF) | ((new_byte as u16) << 8)
+    }
+    fn replace_low_byte(&self, bytes: u16, new_byte: u8) -> u16 {
+        (bytes & 0xFF00) | (new_byte as u16)
     }
     fn get_flag(&self, flag: Flag) -> u8 {
         ((self.registers.af & (1 << flag.clone() as u8)) >> flag.clone() as u8) as u8
@@ -559,6 +629,12 @@ mod tests {
         assert_eq!(cpu.replace_high_byte(0xFF00, 0xAC), 0xAC00);
         assert_eq!(cpu.replace_high_byte(0x0000, 0xFF), 0xFF00);
         assert_eq!(cpu.replace_high_byte(0xAB34, 0xDA), 0xDA34);
+    }
+
+    #[test]
+    fn should_replace_low_byte() {
+        let cpu = cpu();
+        assert_eq!(cpu.replace_low_byte(0xABCD, 0xEF), 0xABEF);
     }
 
     #[test]
@@ -714,6 +790,17 @@ mod tests {
     }
 
     #[test]
+    // 0x0E
+    fn ld_c_n8() {
+        let mut cpu = cpu();
+        cpu.registers.bc = 0xABCD;
+        cpu.registers.pc = 0;
+        cpu.memory.memory[(cpu.registers.pc + 1) as usize] = 0xEF;
+        assert_eq!(Instruction::LD_C_n8, cpu.decode(0x0E));
+        assert_eq!(cpu.registers.bc, 0xABEF);
+    }
+
+    #[test]
     // 0x20
     fn jr_nz_e8() {
         let mut cpu = cpu();
@@ -775,6 +862,37 @@ mod tests {
         assert_eq!(Instruction::XOR_A_A, cpu.decode(0xAF));
         assert_eq!(0x0080, cpu.registers.af);
         assert_flags(&cpu, true, false, false, false);
+    }
+
+    #[test]
+    // 0x3E
+    fn ld_a_n8() {
+        let mut cpu = cpu();
+        cpu.registers.af = 0xABCD;
+        cpu.registers.pc = 0;
+        cpu.memory.memory[(cpu.registers.pc + 1) as usize] = 0xEF;
+        assert_eq!(Instruction::LD_A_n8, cpu.decode(0x3E));
+        assert_eq!(cpu.registers.af, 0xEFCD);
+    }
+    
+    #[test]
+    // 0xE2
+    fn ldh_c_a() {
+        let mut cpu = cpu();
+        cpu.registers.bc = 0xAB01;
+        cpu.registers.af = 0xFF00;
+        assert_eq!(Instruction::LDH_C_A, cpu.decode(0xE2));
+        assert_eq!(cpu.memory.memory[(cpu.memory.map.h_ram.start + 0x01) as usize], 0xFF);
+    }
+
+    #[test]
+    // 0x77
+    fn ld_hl_a() {
+        let mut cpu = cpu();
+        cpu.registers.af = 0xFF00;
+        cpu.registers.hl = 0x1122;
+        assert_eq!(Instruction::LD_HL_A, cpu.decode(0x77));
+        assert_eq!(cpu.memory.memory[cpu.registers.hl as usize], 0xFF);
     }
 
 }
