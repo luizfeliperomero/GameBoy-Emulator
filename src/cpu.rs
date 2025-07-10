@@ -31,6 +31,8 @@ enum Instruction {
     LD_A_n8,
     LDH_C_A,
     INC_C,
+    LDH_A8_A,
+    LD_B_A,
 }
 
 struct InstructionData {
@@ -130,6 +132,16 @@ impl Instruction {
             Instruction::LD_HL_A => InstructionData {
                 mnemonic: "LD [HL], A",
                 opcode: 0x77,
+                cycles: 8,
+            },
+            Instruction::LDH_A8_A => InstructionData {
+                mnemonic: "LDH [a8], A",
+                opcode: 0xE0,
+                cycles: 12,
+            },
+            Instruction::LD_B_A => InstructionData {
+                mnemonic: "LD B, A",
+                opcode: 0x47,
                 cycles: 8,
             },
         }
@@ -397,6 +409,12 @@ impl<T: Drawable> CPU<T> {
                 self.registers.pc += 2;
                 Instruction::LD_A_n8
             }
+            0x47 => {
+                let a = self.get_high_byte(self.registers.af);
+                self.registers.bc = self.replace_high_byte(self.registers.bc, a);
+                self.registers.pc += 1;
+                Instruction::LD_B_A
+            }
             0x73 => {
                 self.memory.memory[self.registers.hl as usize] = self.get_low_byte(self.registers.de);
                 self.registers.pc += 1;
@@ -494,6 +512,14 @@ impl<T: Drawable> CPU<T> {
                 }
                 self.registers.pc += 2;
                 Instruction::ADC_A_n8
+            }
+            0xE0 => {
+                let n8 = self.memory.memory[(self.registers.pc + 1) as usize];
+                let a8 = 0xFF00 + n8 as u16;
+                let a = self.get_high_byte(self.registers.af);
+                self.memory.memory[a8 as usize] = a;
+                self.registers.pc += 1;
+                Instruction::LDH_A8_A
             }
             0xE2 => {
                 let c = self.get_low_byte(self.registers.bc);
@@ -895,4 +921,21 @@ mod tests {
         assert_eq!(cpu.memory.memory[cpu.registers.hl as usize], 0xFF);
     }
 
+    #[test]
+    fn ldh_a8_a() {
+        let mut cpu = cpu();
+        cpu.registers.af = 0xFF00;
+        cpu.memory.memory[(cpu.registers.pc + 1) as usize] = 0xAB;
+        assert_eq!(Instruction::LDH_A8_A, cpu.decode(0xE0));
+        assert_eq!(cpu.memory.memory[0xFFAB], 0xFF);
+    }
+
+    #[test]
+    fn ld_b_a() {
+        let mut cpu = cpu();
+        cpu.registers.af = 0xAA00;
+        cpu.registers.bc = 0xBB00;
+        assert_eq!(Instruction::LD_B_A, cpu.decode(0x47));
+        assert_eq!(cpu.registers.bc, 0xAA00);
+    }
 }
