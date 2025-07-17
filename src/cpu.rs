@@ -31,8 +31,10 @@ enum Instruction {
     LD_A_n8,
     LDH_C_A,
     INC_C,
-    LDH_A8_A,
+    LDH_a8_A,
     LD_B_A,
+    PUSH_HL,
+    LD_DE_n16,
 }
 
 struct InstructionData {
@@ -134,7 +136,7 @@ impl Instruction {
                 opcode: 0x77,
                 cycles: 8,
             },
-            Instruction::LDH_A8_A => InstructionData {
+            Instruction::LDH_a8_A => InstructionData {
                 mnemonic: "LDH [a8], A",
                 opcode: 0xE0,
                 cycles: 12,
@@ -143,6 +145,16 @@ impl Instruction {
                 mnemonic: "LD B, A",
                 opcode: 0x47,
                 cycles: 8,
+            },
+            Instruction::PUSH_HL => InstructionData {
+                mnemonic: "PUSH HL",
+                opcode: 0xE5,
+                cycles: 16,
+            },
+            Instruction::LD_DE_n16 => InstructionData {
+                mnemonic: "LD DE, n16",
+                opcode: 0x11,
+                cycles: 12,
             },
         }
     }
@@ -374,6 +386,13 @@ impl<T: Drawable> CPU<T> {
                 self.registers.pc += 2;
                 Instruction::LD_C_n8
             }
+            0x11 => {
+                let low_byte = self.memory.memory[(self.registers.pc + 1) as usize];
+                let high_byte = self.memory.memory[(self.registers.pc + 2) as usize];
+                self.registers.de = Self::concat_bytes(high_byte, low_byte);
+                self.registers.pc += 1;
+                Instruction::LD_DE_n16
+            }
             0x20 => {
                 let mut jump: bool = false;
                 if self.get_flag(Flag::Z) == 0 {
@@ -430,9 +449,75 @@ impl<T: Drawable> CPU<T> {
                 let prefix_opcode = (instruction & 0b1100_0000) >> 6;
                 if prefix_opcode == 0 {
                     let cb_opcode = (instruction & 0b0011_1000) >> 3;
+                    let operand = self.get_cb_operand(instruction & 0b0000_0111);
+                    // TODO: Set appropriate flags
                     match cb_opcode {
+                        0x0 => {
+                            let carry = (0b1000_0000 & operand) >> 7;
+                            let result = (operand << 1) | carry;
+                            self.replace_cb_operand(instruction & 0b0000_0111, result);
+                            if result == 0 {
+                                self.set_flag(Flag::Z);
+                            } else {
+                                self.clear_flag(Flag::Z);
+                            }
+                            if carry == 1 {
+                                self.set_flag(Flag::C);
+                            } else {
+                                self.clear_flag(Flag::C);
+                            }
+                            self.clear_flag(Flag::H);
+                            self.clear_flag(Flag::N);
+                        }
+                        0x1 => {
+                            let carry = 0b0000_0001 & operand;
+                            let result = (operand >> 1) | carry;
+                            if result == 0 {
+                                self.set_flag(Flag::Z);
+                            } else {
+                                self.clear_flag(Flag::Z);
+                            }
+                            if carry == 1 {
+                                self.set_flag(Flag::C);
+                            } else {
+                                self.clear_flag(Flag::C);
+                            }
+                            self.clear_flag(Flag::H);
+                            self.clear_flag(Flag::N);
+                            self.replace_cb_operand(instruction & 0b0000_0111, result);
+                        }
+                        0x2 => {
+                            let carry = (0b1000_0000 & operand) >> 7;
+                            let result = operand << 1;
+                            self.replace_cb_operand(instruction & 0b0000_0111, result);
+                            if result == 0 {
+                                self.set_flag(Flag::Z);
+                            } else {
+                                self.clear_flag(Flag::Z);
+                            }
+                            if carry == 1 {
+                                self.set_flag(Flag::C);
+                            } else {
+                                self.clear_flag(Flag::C);
+                            }
+                        }
+                        0x3 => {
+                            let carry = 0b0000_0001 & operand;
+                            let result = operand >> 1;
+                            self.replace_cb_operand(instruction & 0b0000_0111, result);
+                            if result == 0 {
+                                self.set_flag(Flag::Z);
+                            } else {
+                                self.clear_flag(Flag::Z);
+                            }
+                            if carry == 1 {
+                                self.set_flag(Flag::C);
+                            } else {
+                                self.clear_flag(Flag::C);
+                            }
+                        }
                         _ => {
-                            panic!("Unknown CB opcode: {}", cb_opcode);
+                            panic!("Unknown CB0 opcode: {}", cb_opcode);
                         }
                     }
                 } else {
@@ -451,7 +536,7 @@ impl<T: Drawable> CPU<T> {
                             self.set_flag(Flag::H);
                         }
                         _ => {
-                            panic!("Unknown CB opcode: {}", prefix_opcode);
+                            panic!("Unknown CB1 opcode: {}", prefix_opcode);
                         }
                     }
                 }
@@ -519,13 +604,20 @@ impl<T: Drawable> CPU<T> {
                 let a = self.get_high_byte(self.registers.af);
                 self.memory.memory[a8 as usize] = a;
                 self.registers.pc += 1;
-                Instruction::LDH_A8_A
+                Instruction::LDH_a8_A
             }
             0xE2 => {
                 let c = self.get_low_byte(self.registers.bc);
                 self.memory.memory[(self.memory.map.h_ram.start + c as u16) as usize] = self.get_high_byte(self.registers.af);
                 self.registers.pc += 1;
                 Instruction::LDH_C_A
+            }
+            0xE5 => {
+                self.memory.memory[(self.registers.sp - 1) as usize] = self.get_low_byte(self.registers.hl);
+                self.memory.memory[(self.registers.sp - 2) as usize] = self.get_high_byte(self.registers.hl);
+                self.registers.sp -= 2;
+                self.registers.pc += 1;
+                Instruction::PUSH_HL
             }
             _ => todo!(
                 "{}",
@@ -592,6 +684,35 @@ impl<T: Drawable> CPU<T> {
                 self.get_high_byte(self.registers.af)
             }
             _ => {0}
+        }
+    }
+    fn replace_cb_operand(&mut self, operand: u8, value: u8) {
+        match operand {
+            0x0 => {
+                self.registers.bc = self.replace_high_byte(self.registers.bc, value);
+            }
+            0x1 => {
+                self.registers.bc = self.replace_low_byte(self.registers.bc, value);
+            }
+            0x2 => {
+                self.registers.de = self.replace_high_byte(self.registers.de, value);
+            }
+            0x3 => {
+                self.registers.de = self.replace_low_byte(self.registers.de, value);
+            }
+            0x4 => {
+                self.registers.hl = self.replace_high_byte(self.registers.hl, value);
+            }
+            0x5 => {
+                self.registers.hl = self.replace_low_byte(self.registers.hl, value);
+            }
+            0x6 => {
+                self.memory.memory[self.registers.hl as usize] = value;
+            }
+            0x7 => {
+                self.registers.af = self.replace_high_byte(self.registers.af, value);
+            }
+            _ => {}
         }
     }
 }
@@ -926,7 +1047,7 @@ mod tests {
         let mut cpu = cpu();
         cpu.registers.af = 0xFF00;
         cpu.memory.memory[(cpu.registers.pc + 1) as usize] = 0xAB;
-        assert_eq!(Instruction::LDH_A8_A, cpu.decode(0xE0));
+        assert_eq!(Instruction::LDH_a8_A, cpu.decode(0xE0));
         assert_eq!(cpu.memory.memory[0xFFAB], 0xFF);
     }
 
@@ -937,5 +1058,52 @@ mod tests {
         cpu.registers.bc = 0xBB00;
         assert_eq!(Instruction::LD_B_A, cpu.decode(0x47));
         assert_eq!(cpu.registers.bc, 0xAA00);
+    }
+
+    #[test]
+    fn cb_rlc() {
+        let mut cpu = cpu();
+        cpu.registers.bc = 0b1000_0000_0000_0000;
+        cpu.memory.memory[0] = 0xCB;
+        cpu.memory.memory[1] = 0x0;
+        cpu.registers.pc = 0;
+        assert_eq!(Instruction::PREFIX, cpu.decode(0xCB));
+        assert_eq!(cpu.registers.bc, 0b0000_0001_0000_0000);
+        assert_flags(&cpu, false, false, false, true);
+    }
+
+    #[test]
+    fn cb_rrc() {
+        let mut cpu = cpu();
+        cpu.registers.bc = 0b1000_0000_0000_0000;
+        cpu.memory.memory[0] = 0xCB;
+        cpu.memory.memory[1] = 0b0000_1000;
+        cpu.registers.pc = 0;
+        assert_eq!(Instruction::PREFIX, cpu.decode(0xCB));
+        assert_eq!(cpu.registers.bc, 0b0100_0000_0000_0000);
+        assert_flags(&cpu, false, false, false, false);
+    }
+
+    #[test]
+    fn cb_rl() {
+        let mut cpu = cpu();
+        cpu.registers.bc = 0b1000_0000_0000_0000;
+        cpu.memory.memory[0] = 0xCB;
+        cpu.memory.memory[1] = 0b0001_0000;
+        cpu.registers.pc = 0;
+        assert_eq!(Instruction::PREFIX, cpu.decode(0xCB));
+        assert_eq!(cpu.registers.bc, 0);
+        assert_flags(&cpu, true, false, false, true);
+    }
+    #[test]
+    fn cb_rr() {
+        let mut cpu = cpu();
+        cpu.registers.bc = 0b0000_0001_0000_0000;
+        cpu.memory.memory[0] = 0xCB;
+        cpu.memory.memory[1] = 0b0001_1000;
+        cpu.registers.pc = 0;
+        assert_eq!(Instruction::PREFIX, cpu.decode(0xCB));
+        assert_eq!(cpu.registers.bc, 0);
+        assert_flags(&cpu, true, false, false, true);
     }
 }
