@@ -35,6 +35,13 @@ enum Instruction {
     LD_B_A,
     PUSH_HL,
     LD_DE_n16,
+    LD_A_DE,
+    INC_DE,
+    CP_A_HL,
+    LD_B_B,
+    LD_E_n8,
+    CALL_a16,
+    LDH_A_a8,
 }
 
 struct InstructionData {
@@ -154,6 +161,41 @@ impl Instruction {
             Instruction::LD_DE_n16 => InstructionData {
                 mnemonic: "LD DE, n16",
                 opcode: 0x11,
+                cycles: 12,
+            },
+            Instruction::LD_A_DE => InstructionData {
+                mnemonic: "LD A, [DE]",
+                opcode: 0x1A,
+                cycles: 8,
+            },
+            Instruction::INC_DE => InstructionData {
+                mnemonic: "INC DE",
+                opcode: 0x13,
+                cycles: 8,
+            },
+            Instruction::CP_A_HL => InstructionData {
+                mnemonic: "CP A, [HL]",
+                opcode: 0xBE,
+                cycles: 8,
+            },
+            Instruction::LD_B_B => InstructionData {
+                mnemonic: "LD B, B",
+                opcode: 0x40,
+                cycles: 4,
+            },
+            Instruction::LD_E_n8 => InstructionData {
+                mnemonic: "LD E, n8",
+                opcode: 0x1E,
+                cycles: 8,
+            },
+            Instruction::CALL_a16 => InstructionData {
+                mnemonic: "CALL a16",
+                opcode: 0xCD,
+                cycles: 24,
+            },
+            Instruction::LDH_A_a8 => InstructionData {
+                mnemonic: "LDH A, [a8]",
+                opcode: 0xF0,
                 cycles: 12,
             },
         }
@@ -350,6 +392,8 @@ impl<T: Drawable> CPU<T> {
         }
     }
     fn decode(&mut self, opcode: u8) -> Instruction {
+        static mut COUNT: u8 = 0;
+        unsafe { COUNT += 1; }
         match opcode {
             0x00 => {
                 self.registers.pc += 1;
@@ -393,6 +437,21 @@ impl<T: Drawable> CPU<T> {
                 self.registers.pc += 1;
                 Instruction::LD_DE_n16
             }
+            0x13 => {
+                self.registers.de = self.registers.de.wrapping_add(1);
+                self.registers.pc += 1;
+                Instruction::INC_DE
+            }
+            0x1A => {
+                self.registers.af = self.replace_high_byte(self.registers.af, self.memory.memory[self.registers.de as usize]);
+                self.registers.pc += 1; 
+                Instruction::LD_A_DE  
+            }
+            0x1E => {
+                self.registers.de = self.replace_low_byte(self.registers.de, self.memory.memory[(self.registers.pc + 1) as usize]);
+                self.registers.pc += 2;
+                Instruction::LD_E_n8
+            }
             0x20 => {
                 let mut jump: bool = false;
                 if self.get_flag(Flag::Z) == 0 {
@@ -428,6 +487,10 @@ impl<T: Drawable> CPU<T> {
                 self.registers.pc += 2;
                 Instruction::LD_A_n8
             }
+            0x40 => {
+                self.registers.pc += 1;
+                Instruction::LD_B_B
+            }
             0x47 => {
                 let a = self.get_high_byte(self.registers.af);
                 self.registers.bc = self.replace_high_byte(self.registers.bc, a);
@@ -443,6 +506,33 @@ impl<T: Drawable> CPU<T> {
                 self.memory.memory[self.registers.hl as usize] = self.get_high_byte(self.registers.af);
                 self.registers.pc += 1;
                 Instruction::LD_HL_A
+            }
+            0xBE => {
+                let a = self.get_high_byte(self.registers.af);
+                let value = self.memory.memory[self.registers.hl as usize];
+                let result = a.wrapping_sub(value);
+
+                if result == 0 {
+                    self.set_flag(Flag::Z)
+                } else {
+                    self.clear_flag(Flag::Z);
+                }
+
+                self.set_flag(Flag::N);
+
+                if (a & 0x0F) < (value & 0x0F) {
+                    self.set_flag(Flag::H);
+                } else {
+                    self.clear_flag(Flag::H);
+                }
+
+                if a < value {
+                    self.set_flag(Flag::C);
+                } else {
+                    self.clear_flag(Flag::C);
+                }
+                self.registers.pc += 1;
+                Instruction::CP_A_HL
             }
             0xCB => {
                 let instruction = self.memory.memory[(self.registers.pc + 1) as usize];
@@ -543,6 +633,24 @@ impl<T: Drawable> CPU<T> {
                 self.registers.pc += 2;
                 Instruction::PREFIX
             }
+            0xCD => {
+                 // Fetch 16-bit immediate address (little endian)
+                let low = self.memory.memory[(self.registers.pc + 1) as usize];
+                let high = self.memory.memory[(self.registers.pc + 2) as usize];
+                let addr = Self::concat_bytes(high, low);
+
+                // Calculate return address (the instruction *after* CALL)
+                let ret_addr = self.registers.pc + 3;
+
+                // Push return address onto stack (high byte first)
+                self.memory.memory[(self.registers.sp - 1) as usize] = self.get_high_byte(ret_addr); // high byte
+                self.memory.memory[(self.registers.sp - 2) as usize] = self.get_low_byte(ret_addr); // low byte
+                self.registers.sp -= 2;
+
+                // Jump to target address
+                self.registers.pc = addr;
+                Instruction::CALL_a16
+            }
             0x66 => {
                 let hl = self.registers.hl;
                 let h = self.get_high_byte(hl);
@@ -619,9 +727,14 @@ impl<T: Drawable> CPU<T> {
                 self.registers.pc += 1;
                 Instruction::PUSH_HL
             }
+            0xF0 => {
+                self.registers.af = self.replace_high_byte(self.registers.af, self.memory.memory[(self.registers.pc + 1) as usize]);
+                self.registers.pc += 2;
+                Instruction::LDH_A_a8
+            }
             _ => todo!(
                 "{}",
-                format!("Unimplemented opcode: 0x{:02X?} at address 0x{:02X?}", opcode, self.registers.pc).as_str()
+                format!("Unimplemented opcode: 0x{:02X?} at address 0x{:02X?}. {} instructions executed", opcode, self.registers.pc, unsafe {COUNT}).as_str()
             ),
         }
     }
@@ -1105,5 +1218,34 @@ mod tests {
         assert_eq!(Instruction::PREFIX, cpu.decode(0xCB));
         assert_eq!(cpu.registers.bc, 0);
         assert_flags(&cpu, true, false, false, true);
+    }
+
+    #[test]
+    fn ld_a_de() {
+        let mut cpu = cpu();
+        cpu.registers.de = 0x1B;
+        cpu.memory.memory[cpu.registers.de as usize] = 0xC5;
+        cpu.registers.af = 0xAA0A;
+        assert_eq!(Instruction::LD_A_DE, cpu.decode(0x1A));
+        assert_eq!(cpu.registers.af, 0xC50A);
+    }
+
+    #[test]
+    fn inc_de() {
+        let mut cpu = cpu();
+        cpu.registers.de = 5;
+        assert_eq!(Instruction::INC_DE, cpu.decode(0x13));
+        assert_eq!(cpu.registers.de, 6);
+    }
+
+    #[test]
+    fn ld_e_n8() {
+        let mut cpu = cpu();
+        cpu.registers.pc = 1;
+        cpu.registers.de = 0xABCD;
+        cpu.memory.memory[(cpu.registers.pc + 1) as usize] = 0xFF;
+        assert_eq!(Instruction::LD_E_n8, cpu.decode(0x1E));
+        assert_eq!(cpu.registers.de, 0xABFF);
+        assert_eq!(cpu.registers.pc, 3);
     }
 }
